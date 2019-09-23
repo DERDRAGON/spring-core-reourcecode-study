@@ -218,7 +218,7 @@ public void refresh() throws BeansException, IllegalStateException {
         prepareRefresh();
 
         // Tell the subclass to refresh the internal bean factory.
-        ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory();
+        ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory(); -- BeanFactory创建
 
         // Prepare the bean factory for use in this context.
         prepareBeanFactory(beanFactory);
@@ -279,8 +279,8 @@ org.springframework.context.support.AbstractApplicationContext.prepareRefresh
 protected void prepareRefresh() {
     // Switch to active.
     this.startupDate = System.currentTimeMillis();
-    this.closed.set(false);
-    this.active.set(true);
+    this.closed.set(false); -- 设置关闭状态为false
+    this.active.set(true); -- 设置激活状态为true
 
     if (logger.isDebugEnabled()) {
         if (logger.isTraceEnabled()) {
@@ -292,11 +292,11 @@ protected void prepareRefresh() {
     }
 
     // Initialize any placeholder property sources in the context environment.
-    initPropertySources();
+    initPropertySources(); 在上下文环境中初始化任何占位符属性来源
 
     // Validate that all properties marked as required are resolvable:
     // see ConfigurablePropertyResolver#setRequiredProperties
-    getEnvironment().validateRequiredProperties();
+    getEnvironment().validateRequiredProperties(); -- 校验属性
 
     // Store pre-refresh ApplicationListeners...
     if (this.earlyApplicationListeners == null) {
@@ -312,4 +312,101 @@ protected void prepareRefresh() {
     // to be published once the multicaster is available...
     this.earlyApplicationEvents = new LinkedHashSet<>();
 }
+
+//属性校验
+org.springframework.core.env.AbstractEnvironment.validateRequiredProperties
+public void validateRequiredProperties() throws MissingRequiredPropertiesException {
+    this.propertyResolver.validateRequiredProperties();
+}
+org.springframework.core.env.AbstractPropertyResolver.validateRequiredProperties
+private final Set<String> requiredProperties = new LinkedHashSet<>();
+public void validateRequiredProperties() {
+    MissingRequiredPropertiesException ex = new MissingRequiredPropertiesException();
+    for (String key : this.requiredProperties) {
+        if (this.getProperty(key) == null) {
+            ex.addMissingRequiredProperty(key);
+        }
+    }
+    if (!ex.getMissingRequiredProperties().isEmpty()) {
+        throw ex;
+    }
+}
+requiredProperties是通过setRequiredProperties方法设置的，保存在一个list里面，默认是空的，也就是不需要校验任何属性。
+public void setRequiredProperties(String... requiredProperties) {
+    for (String key : requiredProperties) {
+        this.requiredProperties.add(key);
+    }
+}
 ```
+BeanFactory创建:<br/>
+```
+protected ConfigurableListableBeanFactory obtainFreshBeanFactory() {
+    refreshBeanFactory();
+    return getBeanFactory();
+}
+org.springframework.context.support.AbstractRefreshableApplicationContext.refreshBeanFactory
+protected final void refreshBeanFactory() throws BeansException {
+    if (hasBeanFactory()) { -- 如果已经有，销毁以前的
+        destroyBeans();
+        closeBeanFactory();
+    }
+    //创建了一个DefaultListableBeanFactory对象
+    try {
+        DefaultListableBeanFactory beanFactory = createBeanFactory(); -- 创建BeanFactory
+        beanFactory.setSerializationId(getId());
+        customizeBeanFactory(beanFactory); -- 定制化beanFactory
+        loadBeanDefinitions(beanFactory);
+        synchronized (this.beanFactoryMonitor) {
+            this.beanFactory = beanFactory;
+        }
+    }
+    catch (IOException ex) {
+        throw new ApplicationContextException("I/O error parsing bean definition source for " + getDisplayName(), ex);
+    }
+}
+```
+![DefaultListableBeanFactory](./image/DefaultListableBeanFactory.png)
+```
+创建默认的BeanFactory
+protected DefaultListableBeanFactory createBeanFactory() {
+    return new DefaultListableBeanFactory(getInternalParentBeanFactory());
+}
+```
+![初始化BeanFactory -- getInternalParentBeanFactory() 是 null](./image/xml初始化BeanFactory.png)<br/>
+BeanFactory定制：<br/>
+```
+org.springframework.context.support.AbstractRefreshableApplicationContext.customizeBeanFactory
+protected void customizeBeanFactory(DefaultListableBeanFactory beanFactory) {
+    if (this.allowBeanDefinitionOverriding != null) {
+        //默认false，不允许覆盖
+        beanFactory.setAllowBeanDefinitionOverriding(this.allowBeanDefinitionOverriding);
+    }
+    if (this.allowCircularReferences != null) {
+        //默认false，不允许循环引用
+        beanFactory.setAllowCircularReferences(this.allowCircularReferences);
+    }
+}
+```
+Bean加载：<br/>
+```
+org.springframework.context.support.AbstractXmlApplicationContext.loadBeanDefinitions(org.springframework.beans.factory.support.DefaultListableBeanFactory)
+核心加载Bean
+protected void loadBeanDefinitions(DefaultListableBeanFactory beanFactory) throws BeansException, IOException {
+    // Create a new XmlBeanDefinitionReader for the given BeanFactory.
+    XmlBeanDefinitionReader beanDefinitionReader = new XmlBeanDefinitionReader(beanFactory);
+
+    // Configure the bean definition reader with this context's
+    // resource loading environment.
+    beanDefinitionReader.setEnvironment(this.getEnvironment());
+    beanDefinitionReader.setResourceLoader(this);
+    beanDefinitionReader.setEntityResolver(new ResourceEntityResolver(this));
+
+    // Allow a subclass to provide custom initialization of the reader,
+    // then proceed with actually loading the bean definitions.
+    initBeanDefinitionReader(beanDefinitionReader);
+    loadBeanDefinitions(beanDefinitionReader);
+}
+```
+创建一个新的XmlBeanDefinitionReader给定BeanFactory。<br/>
+![XmlBeanDefinitionReader](./image/XmlBeanDefinitionReader.png)<br/>
+![ResourceEntityResolver](./image/ResourceEntityResolver.png)<br/>
