@@ -11,20 +11,20 @@ public void refresh() throws BeansException, IllegalStateException {
         ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory(); -- BeanFactory创建
 
         // Prepare the bean factory for use in this context.
-        prepareBeanFactory(beanFactory);
+        prepareBeanFactory(beanFactory); -- 对BeanFactory进行一些特征的设置工作
 
         try {
             // Allows post-processing of the bean factory in context subclasses.
             postProcessBeanFactory(beanFactory);
 
             // Invoke factory processors registered as beans in the context.
-            invokeBeanFactoryPostProcessors(beanFactory);
+            invokeBeanFactoryPostProcessors(beanFactory); -- 允许我们在bean正是初始化之前改变其值
 
             // Register bean processors that intercept bean creation.
             registerBeanPostProcessors(beanFactory);
 
             // Initialize message source for this context.
-            initMessageSource();
+            initMessageSource(); -- Spring国际化
 
             // Initialize event multicaster for this context.
             initApplicationEventMulticaster();
@@ -65,7 +65,9 @@ public void refresh() throws BeansException, IllegalStateException {
         }
     }
 }
-org.springframework.context.support.AbstractApplicationContext.prepareRefresh
+```
+1、 org.springframework.context.support.AbstractApplicationContext.prepareRefresh
+```
 protected void prepareRefresh() {
     // Switch to active.
     this.startupDate = System.currentTimeMillis();
@@ -102,292 +104,278 @@ protected void prepareRefresh() {
     // to be published once the multicaster is available...
     this.earlyApplicationEvents = new LinkedHashSet<>();
 }
-
-//属性校验
-org.springframework.core.env.AbstractEnvironment.validateRequiredProperties
-public void validateRequiredProperties() throws MissingRequiredPropertiesException {
-    this.propertyResolver.validateRequiredProperties();
-}
-org.springframework.core.env.AbstractPropertyResolver.validateRequiredProperties
-private final Set<String> requiredProperties = new LinkedHashSet<>();
-public void validateRequiredProperties() {
-    MissingRequiredPropertiesException ex = new MissingRequiredPropertiesException();
-    for (String key : this.requiredProperties) {
-        if (this.getProperty(key) == null) {
-            ex.addMissingRequiredProperty(key);
-        }
-    }
-    if (!ex.getMissingRequiredProperties().isEmpty()) {
-        throw ex;
-    }
-}
-requiredProperties是通过setRequiredProperties方法设置的，保存在一个list里面，默认是空的，也就是不需要校验任何属性。
-public void setRequiredProperties(String... requiredProperties) {
-    for (String key : requiredProperties) {
-        this.requiredProperties.add(key);
-    }
-}
 ```
-BeanFactory创建:<br/>
+[prepareRefresh方法](./bean_module/prepareRefresh.md)
+
+2、BeanFactory创建:<br/>
 ```
 protected ConfigurableListableBeanFactory obtainFreshBeanFactory() {
     refreshBeanFactory();
     return getBeanFactory();
 }
-org.springframework.context.support.AbstractRefreshableApplicationContext.refreshBeanFactory
-protected final void refreshBeanFactory() throws BeansException {
-    if (hasBeanFactory()) { -- 如果已经有，销毁以前的
-        destroyBeans();
-        closeBeanFactory();
-    }
-    //创建了一个DefaultListableBeanFactory对象
-    try {
-        DefaultListableBeanFactory beanFactory = createBeanFactory(); -- 创建BeanFactory
-        beanFactory.setSerializationId(getId());
-        customizeBeanFactory(beanFactory); -- 定制化beanFactory
-        loadBeanDefinitions(beanFactory);
-        synchronized (this.beanFactoryMonitor) {
-            this.beanFactory = beanFactory;
-        }
-    }
-    catch (IOException ex) {
-        throw new ApplicationContextException("I/O error parsing bean definition source for " + getDisplayName(), ex);
-    }
-}
 ```
-![DefaultListableBeanFactory](../image/DefaultListableBeanFactory.png)
-```
-创建默认的BeanFactory
-protected DefaultListableBeanFactory createBeanFactory() {
-    return new DefaultListableBeanFactory(getInternalParentBeanFactory());
-}
-```
-![初始化BeanFactory -- getInternalParentBeanFactory() 是 null](../image/xml初始化BeanFactory.png)<br/>
-BeanFactory定制：<br/>
-```
-org.springframework.context.support.AbstractRefreshableApplicationContext.customizeBeanFactory
-protected void customizeBeanFactory(DefaultListableBeanFactory beanFactory) {
-    if (this.allowBeanDefinitionOverriding != null) {
-        //默认false，不允许覆盖
-        beanFactory.setAllowBeanDefinitionOverriding(this.allowBeanDefinitionOverriding);
-    }
-    if (this.allowCircularReferences != null) {
-        //默认false，不允许循环引用
-        beanFactory.setAllowCircularReferences(this.allowCircularReferences);
-    }
-}
-```
-Bean加载：<br/>
-```
-org.springframework.context.support.AbstractXmlApplicationContext.loadBeanDefinitions(org.springframework.beans.factory.support.DefaultListableBeanFactory)
-核心加载Bean
-protected void loadBeanDefinitions(DefaultListableBeanFactory beanFactory) throws BeansException, IOException {
-    // Create a new XmlBeanDefinitionReader for the given BeanFactory.
-    XmlBeanDefinitionReader beanDefinitionReader = new XmlBeanDefinitionReader(beanFactory);
+[BeanFactory创建](./bean_module/obtainFreshBeanFactory.md)
 
-    // 配置resourceEesolver和环境信息
-    // resource loading environment.
-    beanDefinitionReader.setEnvironment(this.getEnvironment());
-    beanDefinitionReader.setResourceLoader(this);
-    beanDefinitionReader.setEntityResolver(new ResourceEntityResolver(this));
+![BeanFactory数据结构](../image/Beanfactory_structure.jpg)
 
-    // Allow a subclass to provide custom initialization of the reader,
-    // then proceed with actually loading the bean definitions.
-    // 将新的bean定义读取器初始化 -- 空实现
-    initBeanDefinitionReader(beanDefinitionReader);
-    // 解析路径
-    loadBeanDefinitions(beanDefinitionReader);
-}
+3、prepareBeanFactory
 ```
-创建一个新的XmlBeanDefinitionReader给定BeanFactory。<br/>
-![XmlBeanDefinitionReader](../image/XmlBeanDefinitionReader.png)<br/>
-EntityResolver接口在org.xml.sax中定义。DelegatingEntityResolver用于schema和dtd的解析。进行路径解析
-```
-org.springframework.context.support.AbstractXmlApplicationContext.loadBeanDefinitions(org.springframework.beans.factory.xml.XmlBeanDefinitionReader)
-protected void loadBeanDefinitions(XmlBeanDefinitionReader reader) throws BeansException, IOException {
-    Resource[] configResources = getConfigResources();
-    if (configResources != null) {
-        reader.loadBeanDefinitions(configResources);
-    }
-    String[] configLocations = getConfigLocations();
-    if (configLocations != null) {
-        reader.loadBeanDefinitions(configLocations);
-    }
-}
-org.springframework.beans.factory.support.AbstractBeanDefinitionReader.loadBeanDefinitions(java.lang.String...)
-public int loadBeanDefinitions(String... locations) throws BeanDefinitionStoreException {
-    Assert.notNull(locations, "Location array must not be null");
-    int count = 0;
-    for (String location : locations) {
-        count += loadBeanDefinitions(location);
-    }
-    return count;
-}
-org.springframework.beans.factory.support.AbstractBeanDefinitionReader.loadBeanDefinitions(java.lang.String, java.util.Set<org.springframework.core.io.Resource>)
-public int loadBeanDefinitions(String location, @Nullable Set<Resource> actualResources) throws BeanDefinitionStoreException {
-    //getResource的实现在AbstractApplicationContext：
-    ResourceLoader resourceLoader = getResourceLoader();
-    if (resourceLoader == null) {
-        throw new BeanDefinitionStoreException(
-                "Cannot load bean definitions from location [" + location + "]: no ResourceLoader available");
+protected void prepareBeanFactory(ConfigurableListableBeanFactory beanFactory) {
+	// Tell the internal bean factory to use the context's class loader etc.
+    beanFactory.setBeanClassLoader(getClassLoader());
+    beanFactory.setBeanExpressionResolver(new StandardBeanExpressionResolver(beanFactory.getBeanClassLoader()));
+    // 用于向Spring注册java.beans.PropertyEditor
+    beanFactory.addPropertyEditorRegistrar(new ResourceEditorRegistrar(this, getEnvironment()));
+
+    // Configure the bean factory with context callbacks.
+    beanFactory.addBeanPostProcessor(new ApplicationContextAwareProcessor(this));
+    beanFactory.ignoreDependencyInterface(EnvironmentAware.class);
+    beanFactory.ignoreDependencyInterface(EmbeddedValueResolverAware.class);
+    beanFactory.ignoreDependencyInterface(ResourceLoaderAware.class);
+    beanFactory.ignoreDependencyInterface(ApplicationEventPublisherAware.class);
+    beanFactory.ignoreDependencyInterface(MessageSourceAware.class);
+    beanFactory.ignoreDependencyInterface(ApplicationContextAware.class);
+
+    // BeanFactory interface not registered as resolvable type in a plain factory.
+    // MessageSource registered (and found for autowiring) as a bean.
+    beanFactory.registerResolvableDependency(BeanFactory.class, beanFactory);
+    beanFactory.registerResolvableDependency(ResourceLoader.class, this);
+    beanFactory.registerResolvableDependency(ApplicationEventPublisher.class, this);
+    beanFactory.registerResolvableDependency(ApplicationContext.class, this);
+
+    // Register early post-processor for detecting inner beans as ApplicationListeners.
+    beanFactory.addBeanPostProcessor(new ApplicationListenerDetector(this));
+
+    // Detect a LoadTimeWeaver and prepare for weaving, if found.
+    if (beanFactory.containsBean(LOAD_TIME_WEAVER_BEAN_NAME)) {
+        beanFactory.addBeanPostProcessor(new LoadTimeWeaverAwareProcessor(beanFactory));
+        // Set a temporary ClassLoader for type matching.
+        beanFactory.setTempClassLoader(new ContextTypeMatchClassLoader(beanFactory.getBeanClassLoader()));
     }
 
-    if (resourceLoader instanceof ResourcePatternResolver) {
-        // Resource pattern matching available.
-        try {
-            //获取资源的方法在org.springframework.core.io.support.PathMatchingResourcePatternResolver.getResources
-            //加载 
-            Resource[] resources = ((ResourcePatternResolver) resourceLoader).getResources(location);
-            //解析
-            //最终逐个调用XmlBeanDefinitionReader的loadBeanDefinitions方法
-            //Resource是代表一种资源的接口
-            //最终调用接口org.springframework.beans.factory.xml.XmlBeanDefinitionReader.loadBeanDefinitions(org.springframework.core.io.support.EncodedResource)
-            int count = loadBeanDefinitions(resources);
-            if (actualResources != null) {
-                Collections.addAll(actualResources, resources);
-            }
-            if (logger.isTraceEnabled()) {
-                logger.trace("Loaded " + count + " bean definitions from location pattern [" + location + "]");
-            }
-            return count;
-        }
-        catch (IOException ex) {
-            throw new BeanDefinitionStoreException(
-                    "Could not resolve bean definition resource pattern [" + location + "]", ex);
-        }
+    // Register default environment beans.
+    if (!beanFactory.containsLocalBean(ENVIRONMENT_BEAN_NAME)) {
+        beanFactory.registerSingleton(ENVIRONMENT_BEAN_NAME, getEnvironment());
     }
-    else {
-        // Can only load single resources by absolute URL.
-        Resource resource = resourceLoader.getResource(location);
-        int count = loadBeanDefinitions(resource);
-        if (actualResources != null) {
-            actualResources.add(resource);
-        }
-        if (logger.isTraceEnabled()) {
-            logger.trace("Loaded " + count + " bean definitions from location [" + location + "]");
-        }
-        return count;
+    if (!beanFactory.containsLocalBean(SYSTEM_PROPERTIES_BEAN_NAME)) {
+        beanFactory.registerSingleton(SYSTEM_PROPERTIES_BEAN_NAME, getEnvironment().getSystemProperties());
     }
-}
-org.springframework.core.io.support.PathMatchingResourcePatternResolver.getResources
-public Resource[] getResources(String locationPattern) throws IOException {
-    Assert.notNull(locationPattern, "Location pattern must not be null");
-    if (locationPattern.startsWith(CLASSPATH_ALL_URL_PREFIX)) {
-        // a class path resource (multiple resources for same name possible)
-        if (getPathMatcher().isPattern(locationPattern.substring(CLASSPATH_ALL_URL_PREFIX.length()))) {
-            // a class path resource pattern
-            return findPathMatchingResources(locationPattern);
-        }
-        else {
-            // all class path resources with the given name
-            return findAllClassPathResources(locationPattern.substring(CLASSPATH_ALL_URL_PREFIX.length()));
-        }
+    if (!beanFactory.containsLocalBean(SYSTEM_ENVIRONMENT_BEAN_NAME)) {
+        beanFactory.registerSingleton(SYSTEM_ENVIRONMENT_BEAN_NAME, getEnvironment().getSystemEnvironment());
     }
-    else {
-        // Generally only look for a pattern after a prefix here,
-        // and on Tomcat only after the "*/" separator for its "war:" protocol.
-        int prefixEnd = (locationPattern.startsWith("war:") ? locationPattern.indexOf("*/") + 1 :
-                locationPattern.indexOf(':') + 1);
-        if (getPathMatcher().isPattern(locationPattern.substring(prefixEnd))) {
-            // a file pattern
-            return findPathMatchingResources(locationPattern);
-        }
-        else {
-            // a single resource with the given name
-            return new Resource[] {getResourceLoader().getResource(locationPattern)};
-        }
-    }
-}
-XmlBeanDefinitionReader的loadBeanDefinitions方法
-org.springframework.beans.factory.xml.XmlBeanDefinitionReader.loadBeanDefinitions(org.springframework.core.io.Resource)
-public int loadBeanDefinitions(Resource resource) throws BeanDefinitionStoreException {
-    return loadBeanDefinitions(new EncodedResource(resource));
-}
-资源解析部分
-org.springframework.beans.factory.xml.XmlBeanDefinitionReader.loadBeanDefinitions(org.springframework.core.io.support.EncodedResource)
-InputStream inputStream = encodedResource.getResource().getInputStream();
-try {
-    InputSource inputSource = new InputSource(inputStream);
-    if (encodedResource.getEncoding() != null) {
-        inputSource.setEncoding(encodedResource.getEncoding());
-    }
-    return doLoadBeanDefinitions(inputSource, encodedResource.getResource());
-}
-加载文件到内存
-documentLoader是一个DefaultDocumentLoader对象，此类是DocumentLoader接口的唯一实现。getEntityResolver方法返回ResourceEntityResolver。
-errorHandler是一个SimpleSaxErrorHandler对象。
-校验模型其实就是确定xml文件使用xsd方式还是dtd方式来校验。Spring会通过读取xml文件的方式判断应该采用哪种。
-NamespaceAware默认false，因为默认配置了校验为true。
-DefaultDocumentLoader.loadDocument:
-protected Document doLoadDocument(InputSource inputSource, Resource resource) throws Exception {
-    return this.documentLoader.loadDocument(inputSource, getEntityResolver(), this.errorHandler,
-            getValidationModeForResource(resource), isNamespaceAware());
-}
-public Document loadDocument(InputSource inputSource, EntityResolver entityResolver,
-			ErrorHandler errorHandler, int validationMode, boolean namespaceAware) throws Exception {
-    DocumentBuilderFactory factory = createDocumentBuilderFactory(validationMode, namespaceAware);
-    if (logger.isTraceEnabled()) {
-        logger.trace("Using JAXP provider [" + factory.getClass().getName() + "]");
-    }
-    DocumentBuilder builder = createDocumentBuilder(factory, entityResolver, errorHandler);
-    return builder.parse(inputSource);
-}
-protected DocumentBuilderFactory createDocumentBuilderFactory(int validationMode, boolean namespaceAware)
-			throws ParserConfigurationException {
-    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-    factory.setNamespaceAware(namespaceAware);
-    if (validationMode != XmlValidationModeDetector.VALIDATION_NONE) {
-        //此方法设置为仅对dtd有效，xsd无效
-        factory.setValidating(true);
-        if (validationMode == XmlValidationModeDetector.VALIDATION_XSD) {
-            // Enforce namespace aware for XSD...
-            //开启xsd(schema)支持
-            // Enforce namespace aware for XSD...
-            factory.setNamespaceAware(true);
-            try {
-                factory.setAttribute(SCHEMA_LANGUAGE_ATTRIBUTE, XSD_SCHEMA_LANGUAGE);
-            }
-            catch (IllegalArgumentException ex) {
-                ParserConfigurationException pcex = new ParserConfigurationException(
-                        "Unable to validate using XSD: Your JAXP provider [" + factory +
-                        "] does not support XML Schema. Are you running on Java 1.4 with Apache Crimson? " +
-                        "Upgrade to Apache Xerces (or Java 1.5) for full XSD support.");
-                pcex.initCause(ex);
-                throw pcex;
-            }
-        }
-    }
-    return factory;
 }
 ```
-![ResourceEntityResolver](../image/ResourceEntityResolver.png)<br/>
-Bean解析
+方法负责对BeanFactory进行一些特征的设置工作，"特征"包含这么几个方面:<br/>
+**BeanExpressionResolver**<br/>
+[BeanExpressionResolver](./bean_module/prepareBeanFactory-BeanExpressionResolver.md)<br/>
+prepareBeanFactory将一个此对象放入BeanFactory<br/>
+beanFactory.setBeanExpressionResolver(new StandardBeanExpressionResolver(beanFactory.getBeanClassLoader()));<br/>
+**PropertyEditorRegistrar**<br/>
+[PropertyEditorRegistrar](./bean_module/prepareBeanFactory-PropertyEditorRegistrar.md)<br/>
+此接口用于向Spring注册java.beans.PropertyEditor，只有一个方法:
+registerCustomEditors(PropertyEditorRegistry registry)
+实现也只有一个: ResourceEditorRegistrar。
+在编写xml配置时，我们设置的值都是字符串形式，所以在使用时肯定需要转为我们需要的类型，PropertyEditor接口正是定义了这么个东西。
+prepareBeanFactory
 ```
-开始注册bean
-public int registerBeanDefinitions(Document doc, Resource resource) throws BeanDefinitionStoreException {
-    BeanDefinitionDocumentReader documentReader = createBeanDefinitionDocumentReader();
-    int countBefore = getRegistry().getBeanDefinitionCount();
-    documentReader.registerBeanDefinitions(doc, createReaderContext(resource));
-    return getRegistry().getBeanDefinitionCount() - countBefore;
-}
-org.springframework.beans.factory.xml.XmlBeanDefinitionReader.createBeanDefinitionDocumentReader
-protected BeanDefinitionDocumentReader createBeanDefinitionDocumentReader() {
-    //documentReaderClass默认是DefaultBeanDefinitionDocumentReader，这其实也是策略模式，通过setter方法可以更换其实现。
-    return BeanUtils.instantiateClass(this.documentReaderClass);
-}
-org.springframework.beans.factory.xml.XmlBeanDefinitionReader.createReaderContext
-public XmlReaderContext createReaderContext(Resource resource) {
-    //problemReporter是一个FailFastProblemReporter对象。
-    //eventListener是EmptyReaderEventListener对象，此类里的方法都是空实现。
-    //sourceExtractor是NullSourceExtractor对象，直接返回空，也是空实现。
-    //getNamespaceHandlerResolver默认返回DefaultNamespaceHandlerResolver对象，用来获取xsd对应的处理器。
-    //XmlReaderContext的作用感觉就是这一堆参数的容器，糅合到一起传给DocumentReader，并美其名为Context。可以看出，Spring中到处都是策略模式，大量操作被抽象成接口。
-    return new XmlReaderContext(resource, this.problemReporter, this.eventListener,
-            this.sourceExtractor, this, getNamespaceHandlerResolver());
-}
-org.springframework.beans.factory.xml.DefaultBeanDefinitionDocumentReader.registerBeanDefinitions
-public void registerBeanDefinitions(Document doc, XmlReaderContext readerContext) {
-    this.readerContext = readerContext;
-    doRegisterBeanDefinitions(doc.getDocumentElement());
+beanFactory.addPropertyEditorRegistrar(new ResourceEditorRegistrar(this, getEnvironment()));
+```
+BeanFactory也暴露了registerCustomEditors方法用以添加自定义的转换器，所以这个地方是组合模式的体现。
+我们有两种方式可以添加自定义PropertyEditor:
+```
+通过context.getBeanFactory().registerCustomEditor
+通过Spring配置文件:
+<bean class="org.springframework.beans.factory.config.CustomEditorConfigurer">
+  <property name="customEditors">
+          <map>
+              <entry key="base.Cat" value="base.CatEditor" /> 
+      </map>
+  </property>
+</bean>
+```
+**环境注入**<br/>
+在Spring中我们自己的bean可以通过实现EnvironmentAware等一系列Aware接口获取到Spring内部的一些对象。prepareBeanFactory:<br/>
+`beanFactory.addBeanPostProcessor(new ApplicationContextAwareProcessor(this));`
+ApplicationContextAwareProcessor核心的invokeAwareInterfaces方法:
+```
+private void invokeAwareInterfaces(Object bean) {
+    if (bean instanceof Aware) {
+        if (bean instanceof EnvironmentAware) {
+            ((EnvironmentAware) bean).setEnvironment(this.applicationContext.getEnvironment());
+        }
+        if (bean instanceof EmbeddedValueResolverAware) {
+            ((EmbeddedValueResolverAware) bean).setEmbeddedValueResolver(this.embeddedValueResolver);
+        }
+        //....
+    }
 }
 ```
+**依赖解析忽略**<br/>
+```
+beanFactory.ignoreDependencyInterface(EnvironmentAware.class);
+beanFactory.ignoreDependencyInterface(EmbeddedValueResolverAware.class);
+beanFactory.ignoreDependencyInterface(ResourceLoaderAware.class);
+beanFactory.ignoreDependencyInterface(ApplicationEventPublisherAware.class);
+beanFactory.ignoreDependencyInterface(MessageSourceAware.class);
+beanFactory.ignoreDependencyInterface(ApplicationContextAware.class);
+```
+**bean伪装**<br/>
+有些对象并不在BeanFactory中，但是我们依然想让它们可以被装配，这就需要伪装一下:
+```
+beanFactory.registerResolvableDependency(BeanFactory.class, beanFactory);
+beanFactory.registerResolvableDependency(ResourceLoader.class, this);
+beanFactory.registerResolvableDependency(ApplicationEventPublisher.class, this);
+beanFactory.registerResolvableDependency(ApplicationContext.class, this);
+```
+伪装关系保存在一个Map<Class<?>, Object>里。
+
+**LoadTimeWeaver**<br/>
+如果配置了此bean，那么：<br/>
+```
+if (beanFactory.containsBean(LOAD_TIME_WEAVER_BEAN_NAME)) {
+    beanFactory.addBeanPostProcessor(new LoadTimeWeaverAwareProcessor(beanFactory));
+    // Set a temporary ClassLoader for type matching.
+    beanFactory.setTempClassLoader(new ContextTypeMatchClassLoader(beanFactory.getBeanClassLoader()));
+}
+```
+**注册环境**<br/>
+```
+f (!beanFactory.containsLocalBean(ENVIRONMENT_BEAN_NAME)) {
+    beanFactory.registerSingleton(ENVIRONMENT_BEAN_NAME, getEnvironment());
+}
+if (!beanFactory.containsLocalBean(SYSTEM_PROPERTIES_BEAN_NAME)) {
+    beanFactory.registerSingleton(SYSTEM_PROPERTIES_BEAN_NAME, getEnvironment().getSystemProperties());
+}
+if (!beanFactory.containsLocalBean(SYSTEM_ENVIRONMENT_BEAN_NAME)) {
+    beanFactory.registerSingleton(SYSTEM_ENVIRONMENT_BEAN_NAME, getEnvironment().getSystemEnvironment());
+}
+```
+containsLocalBean特殊之处在于不会去父BeanFactory寻找。
+
+4、postProcessBeanFactory<br/>
+此方法允许子类在所有的bean尚未初始化之前注册BeanPostProcessor。空实现且没有子类覆盖。<br/>
+
+5、invokeBeanFactoryPostProcessors<br/>
+BeanFactoryPostProcessor接口允许我们在bean正是初始化之前改变其值。此接口只有一个方法:
+```
+org.springframework.context.support.AbstractApplicationContext.invokeBeanFactoryPostProcessors
+protected void invokeBeanFactoryPostProcessors(ConfigurableListableBeanFactory beanFactory) {
+    PostProcessorRegistrationDelegate.invokeBeanFactoryPostProcessors(beanFactory, getBeanFactoryPostProcessors());
+    // Detect a LoadTimeWeaver and prepare for weaving, if found in the meantime
+    // (e.g. through an @Bean method registered by ConfigurationClassPostProcessor)
+    if (beanFactory.getTempClassLoader() == null && beanFactory.containsBean(LOAD_TIME_WEAVER_BEAN_NAME)) {
+        beanFactory.addBeanPostProcessor(new LoadTimeWeaverAwareProcessor(beanFactory));
+        beanFactory.setTempClassLoader(new ContextTypeMatchClassLoader(beanFactory.getBeanClassLoader()));
+    }
+}
+```
+有两种方式可以向Spring添加此对象:
+```
+1、通过代码的方式
+context.addBeanFactoryPostProcessor
+2、通过xml配置的方式
+<bean class="base.SimpleBeanFactoryPostProcessor" />
+```
+注意此时尚未进行bean的初始化工作，初始化是在后面的finishBeanFactoryInitialization进行的，所以在BeanFactoryPostProcessor对象中获取bean会导致提前初始化。
+`PostProcessorRegistrationDelegate.invokeBeanFactoryPostProcessors(beanFactory, getBeanFactoryPostProcessors());` -- 关键源代码<br/>
+getBeanFactoryPostProcessors获取的就是AbstractApplicationContext的成员beanFactoryPostProcessors(ArrayList)，但是很有意思，只有通过<br/>
+**context.addBeanFactoryPostProcessor这种方式添加的才会出现在这个List里，所以对于xml配置方式，此List其实没有任何元素。玄机就在PostProcessorRegistrationDelegate里**。<br/>
+核心思想就是使用BeanFactory的getBeanNamesForType方法获取相应的BeanDefinition的name数组，之后逐一调用getBean方法获取到bean(初始化)<br/>
+ps：此处有一个优先级的概念，如果你的BeanFactoryPostProcessor同时实现了Ordered或者是PriorityOrdered接口，那么会被首先执行。<br/>
+
+6、BeanPostProcessor注册<br/>
+此部分实质上是在BeanDefinitions中寻找BeanPostProcessor，之后调用BeanFactory.addBeanPostProcessor方法保存在一个List中，注意添加时仍然有优先级的概念，优先级高的在前面。
+
+7、MessageSource<br/>
+此接口用以支持Spring国际化。继承体系如下:<br/>
+![MessageSource继承体系](../image/MessageSource.jpg)<br/>
+AbstractApplicationContext的initMessageSource()方法就是在BeanFactory中查找MessageSource的bean，如果配置了此bean，
+那么调用getBean方法完成其初始化并将其保存在AbstractApplicationContext内部messageSource成员变量中，用以处理ApplicationContext的getMessage调用，
+因为从继承体系上来看，ApplicationContext是MessageSource的子类，此处是委托模式的体现。
+如果没有配置此bean，那么初始化一个DelegatingMessageSource对象，此类是一个空实现，同样用以处理getMessage调用请求。
+![AbstractApplicationContext的initMessageSource](./bean_module/initMessageSource.md)
+
+8、事件驱动
+```
+initApplicationEventMulticaster -- org.springframework.context.support.AbstractApplicationContext.initApplicationEventMulticaster
+```
+此接口代表了Spring的事件驱动(监听器)模式。一个事件驱动包含三部分:<br/>
+① 事件：java的所有事件对象一般都是java.util.EventObject的子类，Spring的整个继承体系如下:<br/>
+![EventObject继承体系](../image/EventObject.jpg)<br/>
+② 发布者（ApplicationEventPublisher）<br/>
+![ApplicationEventPublisher](../image/ApplicationEventPublisher.jpg)<br/>
+ApplicationEventPublisher实际上正是将请求委托给ApplicationEventMulticaster来实现的。其继承体系:<br/>
+![ApplicationEventMulticaster](../image/ApplicationEventMulticaster.jpg)<br/>
+③ 监听器<br/>
+所有的监听器是jdk EventListener的子类，这是一个mark接口。继承体系:<br/>
+![EventListener监听器继承体系](../image/EventListener.jpg)<br/>
+SmartApplicationListener和GenericApplicationListener是高度相似的，都提供了事件类型检测和顺序机制，而后者是从Spring4.2加入的，Spring官方文档推荐使用后者代替前者。<br/>
+**初始化：**
+因为ApplicationEventPublisher是通过委托给ApplicationEventMulticaster实现的，所以refresh方法中完成的是对ApplicationEventMulticaster的初始化:<br/>
+**事件发布：**
+AbstractApplicationContext.publishEvent核心代码:<br/>
+```
+protected void publishEvent(Object event, ResolvableType eventType) {
+    getApplicationEventMulticaster().multicastEvent(applicationEvent, eventType);
+}
+SimpleApplicationEventMulticaster.multicastEvent:
+@Override
+public void multicastEvent(final ApplicationEvent event, ResolvableType eventType) {
+    ResolvableType type = (eventType != null ? eventType : resolveDefaultEventType(event));
+    for (final ApplicationListener<?> listener : getApplicationListeners(event, type)) {
+        Executor executor = getTaskExecutor();
+        if (executor != null) {
+            executor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    invokeListener(listener, event);
+                }
+            });
+        } else {
+            invokeListener(listener, event);
+        }
+    }
+}
+```
+**监听器获取**
+获取当然还是通过beanFactory的getBean来完成的，值得注意的是Spring在此处使用了缓存(ConcurrentHashMap)来加速查找的过程。
+
+同步/异步
+可以看出，如果executor不为空，那么监听器的执行实际上是异步的。那么如何配置同步/异步呢?
+```
+全局
+<task:executor id="multicasterExecutor" pool-size="3"/>
+<bean class="org.springframework.context.event.SimpleApplicationEventMulticaster">
+    <property name="taskExecutor" ref="multicasterExecutor"></property>
+</bean>
+```
+task schema是Spring从3.0开始加入的，使我们可以不再依赖于Quartz实现定时任务，源码在org.springframework.core.task包下，使用需要引入schema：
+`xmlns:task="http://www.springframework.org/schema/task"
+ xsi:schemaLocation="http://www.springframework.org/schema/task http://www.springframework.org/schema/task/spring-task-4.0.xsd"`
+[Spring定时任务的几种实现](./bean_module/Spring定时任务的几种实现.md)
+**注解**
+开启注解支持:
+```
+<!-- 开启@AspectJ AOP代理 -->  
+<aop:aspectj-autoproxy proxy-target-class="true"/>  
+<!-- 任务调度器 -->  
+<task:scheduler id="scheduler" pool-size="10"/>  
+<!-- 任务执行器 -->  
+<task:executor id="executor" pool-size="10"/>  
+<!--开启注解调度支持 @Async @Scheduled-->  
+<task:annotation-driven executor="executor" scheduler="scheduler" proxy-target-class="true"/>
+eg:
+@Component  
+public class EmailRegisterListener implements ApplicationListener<RegisterEvent> {  
+    @Async  
+    @Override  
+    public void onApplicationEvent(final RegisterEvent event) {  
+        System.out.println("注册成功，发送确认邮件给：" + ((User)event.getSource()).getUsername());  
+    }  
+} 
+```
+[Spring事件驱动模型](./bean_module/Spring事件驱动模型.md)
+
+
+
+

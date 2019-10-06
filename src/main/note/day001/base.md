@@ -76,6 +76,7 @@ protected ConfigurableEnvironment createEnvironment() {
 }
 ```
 [setConfigLocations详情](./base_tree/setConfigLocations.md)<br/>
+
 &nbsp;&nbsp;&nbsp;&nbsp;④ Spring bean解析<br/>
 ```
 org.springframework.context.support.AbstractApplicationContext.refresh
