@@ -374,7 +374,54 @@ public class EmailRegisterListener implements ApplicationListener<RegisterEvent>
     }  
 } 
 ```
-[Spring事件驱动模型](./bean_module/Spring事件驱动模型.md)
+[Spring事件驱动模型](./bean_module/Spring事件驱动模型.md)<br/>
+
+9、onRefresh<br/>
+模版方法，允许子类在进行bean初始化之前进行一些定制操作。默认空实现。
+
+10、ApplicationListener注册<br/>
+注册监听器
+
+11、singleton初始化
+finishBeanFactoryInitialization：
+```
+org.springframework.context.support.AbstractApplicationContext.finishBeanFactoryInitialization
+protected void finishBeanFactoryInitialization(ConfigurableListableBeanFactory beanFactory) {
+    // Initialize conversion service for this context.
+    if (beanFactory.containsBean(CONVERSION_SERVICE_BEAN_NAME) &&
+            beanFactory.isTypeMatch(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class)) {
+        beanFactory.setConversionService(
+                beanFactory.getBean(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class));
+    }
+    // Register a default embedded value resolver if no bean post-processor
+    // (such as a PropertyPlaceholderConfigurer bean) registered any before:
+    // at this point, primarily for resolution in annotation attribute values.
+    if (!beanFactory.hasEmbeddedValueResolver()) {
+        //StringValueResolver
+        beanFactory.addEmbeddedValueResolver(strVal -> getEnvironment().resolvePlaceholders(strVal));
+    }
+    // Initialize LoadTimeWeaverAware beans early to allow for registering their transformers early.
+    String[] weaverAwareNames = beanFactory.getBeanNamesForType(LoadTimeWeaverAware.class, false, false);
+    for (String weaverAwareName : weaverAwareNames) {
+        getBean(weaverAwareName);
+    }
+    // Stop using the temporary ClassLoader for type matching.
+    beanFactory.setTempClassLoader(null);
+    // Allow for caching all bean definition metadata, not expecting further changes.
+    beanFactory.freezeConfiguration();
+    // Instantiate all remaining (non-lazy-init) singletons.
+    beanFactory.preInstantiateSingletons();
+}
+```
+[finishBeanFactoryInitialization详情](./bean_module/finishBeanFactoryInitialization.md)
+
+
+
+
+
+
+
+
 
 
 
