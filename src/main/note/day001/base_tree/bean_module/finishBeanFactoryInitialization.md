@@ -137,7 +137,7 @@ protected <T> T doGetBean(final String name, @Nullable final Class<T> requiredTy
             throw new BeanCurrentlyInCreationException(beanName);
         }
         // Check if bean definition exists in this factory.
-        // 检查父容器
+        // 检查父容器 ⬇️
         BeanFactory parentBeanFactory = getParentBeanFactory();
         if (parentBeanFactory != null && !containsBeanDefinition(beanName)) {
             // Not found -> check parent.
@@ -165,6 +165,7 @@ protected <T> T doGetBean(final String name, @Nullable final Class<T> requiredTy
             final RootBeanDefinition mbd = getMergedLocalBeanDefinition(beanName);
             checkMergedBeanDefinition(mbd, beanName, args);
             // Guarantee initialization of beans that the current bean depends on.
+            // 依赖初始化 ⬇️
             String[] dependsOn = mbd.getDependsOn();
             if (dependsOn != null) {
                 for (String dep : dependsOn) {
@@ -183,6 +184,7 @@ protected <T> T doGetBean(final String name, @Nullable final Class<T> requiredTy
                 }
             }
             // Create bean instance.
+            // Singleton初始化 ⬇️
             if (mbd.isSingleton()) {
                 sharedInstance = getSingleton(beanName, () -> {
                     try {
@@ -290,6 +292,287 @@ if (parentBeanFactory != null && !containsBeanDefinition(beanName)) {
     }
 }
 ```
+
+#### 依赖初始化
+bean可以由depends-on属性配置依赖的bean。Spring会首先初始化依赖的bean。
+```
+String[] dependsOn = mbd.getDependsOn();
+if (dependsOn != null) {
+    for (String dependsOnBean : dependsOn) {
+         //检测是否存在循环依赖
+        if (isDependent(beanName, dependsOnBean)) {
+            throw new BeanCreationException(mbd.getResourceDescription(), beanName,
+            "Circular depends-on relationship between '" + beanName + "' and '" + dependsOnBean + "'");
+        }
+        registerDependentBean(dependsOnBean, beanName);
+        getBean(dependsOnBean);
+    }
+}
+```
+registerDependentBean进行了依赖关系的注册，这么做的原因是Spring在即进行bean销毁的时候会首先销毁被依赖的bean。
+依赖关系的保存是通过一个ConcurrentHashMap<String, Set>完成的，key是bean的真实名字。
+
+#### Singleton初始化
+这里大纲是Singleton初始化，但是getBean方法本身是包括所有scope的初始化，在这里一次说明了。
+```
+if (mbd.isSingleton()) {
+    sharedInstance = getSingleton(beanName, new ObjectFactory<Object>() {
+        @Override
+        public Object getObject() throws BeansException {
+            return createBean(beanName, mbd, args);
+        }
+    });
+    bean = getObjectForBeanInstance(sharedInstance, name, beanName, mbd);
+}
+```
+**getSingleton方法**
+1、首先会检测是否已经存在，如果存在，直接返回:
+```
+synchronized (this.singletonObjects) {
+    Object singletonObject = this.singletonObjects.get(beanName);
+}
+```
+所有的单例bean都保存在这样的数据结构中: ConcurrentHashMap<String, Object>。
+2、bean创建
+```
+protected Object createBean(String beanName, RootBeanDefinition mbd, @Nullable Object[] args)
+			throws BeanCreationException {
+    if (logger.isTraceEnabled()) {
+        logger.trace("Creating instance of bean '" + beanName + "'");
+    }
+    RootBeanDefinition mbdToUse = mbd;
+    // Make sure bean class is actually resolved at this point, and
+    // clone the bean definition in case of a dynamically resolved Class
+    // which cannot be stored in the shared merged bean definition.
+    Class<?> resolvedClass = resolveBeanClass(mbd, beanName);
+    if (resolvedClass != null && !mbd.hasBeanClass() && mbd.getBeanClassName() != null) {
+        mbdToUse = new RootBeanDefinition(mbd);
+        mbdToUse.setBeanClass(resolvedClass);
+    }
+    // Prepare method overrides.
+    // lookup-method检测 此部分用于检测lookup-method标签配置的方法是否存在:
+    try {
+        mbdToUse.prepareMethodOverrides(); ⬇️
+    }
+    catch (BeanDefinitionValidationException ex) {
+        throw new BeanDefinitionStoreException(mbdToUse.getResourceDescription(),
+                beanName, "Validation of method overrides failed", ex);
+    }
+    try {
+        // Give BeanPostProcessors a chance to return a proxy instead of the target bean instance.
+        Object bean = resolveBeforeInstantiation(beanName, mbdToUse);
+        if (bean != null) {
+            return bean;
+        }
+    }
+    catch (Throwable ex) {
+        throw new BeanCreationException(mbdToUse.getResourceDescription(), beanName,
+                "BeanPostProcessor before instantiation of bean failed", ex);
+    }
+    try {
+        Object beanInstance = doCreateBean(beanName, mbdToUse, args);
+        if (logger.isTraceEnabled()) {
+            logger.trace("Finished creating instance of bean '" + beanName + "'");
+        }
+        return beanInstance;
+    }
+    catch (BeanCreationException | ImplicitlyAppearedSingletonException ex) {
+        // A previously detected exception with proper bean creation context already,
+        // or illegal singleton state to be communicated up to DefaultSingletonBeanRegistry.
+        throw ex;
+    }
+    catch (Throwable ex) {
+        throw new BeanCreationException(
+                mbdToUse.getResourceDescription(), beanName, "Unexpected exception during bean creation", ex);
+    }
+}
+```
+_lookup-method检测_ 此部分用于检测lookup-method标签配置的方法是否存在:
+```
+public void prepareMethodOverrides() throws BeanDefinitionValidationException {
+    // Check that lookup methods exists.
+    if (hasMethodOverrides()) {
+        Set<MethodOverride> overrides = getMethodOverrides().getOverrides();
+        synchronized (overrides) {
+            for (MethodOverride mo : overrides) {
+                prepareMethodOverride(mo);
+            }
+        }
+    }
+}
+protected void prepareMethodOverride(MethodOverride mo) throws BeanDefinitionValidationException {
+    int count = ClassUtils.getMethodCountForName(getBeanClass(), mo.getMethodName());
+    if (count == 0) {
+        throw new BeanDefinitionValidationException(
+                "Invalid method override: no method with name '" + mo.getMethodName() +
+                "' on class [" + getBeanClassName() + "]");
+    }
+    else if (count == 1) {
+        // Mark override as not overloaded, to avoid the overhead of arg type checking.
+        mo.setOverloaded(false);
+    }
+}
+
+InstantiationAwareBeanPostProcessor触发
+在这里触发的是其postProcessBeforeInitialization和postProcessAfterInstantiation方法。
+Object bean = resolveBeforeInstantiation(beanName, mbdToUse);
+if (bean != null) {
+    return bean;
+}
+Object beanInstance = doCreateBean(beanName, mbdToUse, args);
+return beanInstance;
+
+protected Object resolveBeforeInstantiation(String beanName, RootBeanDefinition mbd) {
+    Object bean = null;
+    if (!Boolean.FALSE.equals(mbd.beforeInstantiationResolved)) {
+        // Make sure bean class is actually resolved at this point.
+        if (!mbd.isSynthetic() && hasInstantiationAwareBeanPostProcessors()) {
+            Class<?> targetType = determineTargetType(beanName, mbd);
+            if (targetType != null) {
+                bean = applyBeanPostProcessorsBeforeInstantiation(targetType, beanName);
+                if (bean != null) {
+                    bean = applyBeanPostProcessorsAfterInitialization(bean, beanName);
+                }
+            }
+        }
+        mbd.beforeInstantiationResolved = (bean != null);
+    }
+    return bean;
+}
+```
+**如果InstantiationAwareBeanPostProcessor返回的不是空，那么将不会继续执行剩下的Spring初始化流程，此接口用于初始化自定义的bean，主要是在Spring内部使用。**
+
+_doCreateBean_
+```
+创建(createBeanInstance)
+BeanWrapper instanceWrapper = null;
+if (instanceWrapper == null) {
+    instanceWrapper = createBeanInstance(beanName, mbd, args);
+}
+```
+createBeanInstance的创建过程又分为以下几种情况:
+- 工厂bean: 调用instantiateUsingFactoryMethod方法:
+```
+org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.instantiateUsingFactoryMethod
+protected BeanWrapper instantiateUsingFactoryMethod(
+  String beanName, RootBeanDefinition mbd, Object[] explicitArgs) {
+  return new ConstructorResolver(this).instantiateUsingFactoryMethod(beanName, mbd, explicitArgs);
+}
+```
+注意，此处的工厂bean指的是配置了factory-bean/factory-method属性的bean，不是实现了FactoryBean接口的bean。
+如果没有配置factory-bean属性，那么factory-method指向的方法必须是静态的。此方法主要做了这么几件事:<br/>
+ ~ 初始化一个BeanWrapperImpl对象。
+ ~ 根据设置的参数列表使用反射的方法寻找相应的方法对象。
+ ~ InstantiationStrategy: bean的初始化在此处又抽成了策略模式，类图:
+![InstantiationStrategy](../../image/InstantiationStrategy.jpg)
+
+instantiateUsingFactoryMethod部分源码:
+```
+beanInstance = this.beanFactory.getInstantiationStrategy().instantiate(
+    mbd, beanName, this.beanFactory, factoryBean, factoryMethodToUse, argsToUse);
+```
+getInstantiationStrategy返回的是CglibSubclassingInstantiationStrategy对象。此处instantiate实现也很简单，就是调用工厂方法的Method对象反射调用其invoke即可得到对象，SimpleInstantiationStrategy.
+instantiate核心源码:
+```
+@Override
+public Object instantiate(RootBeanDefinition bd, String beanName, BeanFactory owner,
+    Object factoryBean, final Method factoryMethod, Object... args) {
+    return factoryMethod.invoke(factoryBean, args);
+}
+```
+- 构造器自动装配
+createBeanInstance部分源码:
+```
+// Need to determine the constructor...
+Constructor<?>[] ctors = determineConstructorsFromBeanPostProcessors(beanClass, beanName);
+if (ctors != null ||
+  mbd.getResolvedAutowireMode() == RootBeanDefinition.AUTOWIRE_CONSTRUCTOR ||
+    //配置了<constructor-arg>子元素
+  mbd.hasConstructorArgumentValues() || !ObjectUtils.isEmpty(args))  {
+  return autowireConstructor(beanName, mbd, ctors, args);
+}
+```
+determineConstructorsFromBeanPostProcessors源码:
+```
+protected Constructor<?>[] determineConstructorsFromBeanPostProcessors(Class<?> beanClass, String beanName) {
+  if (beanClass != null && hasInstantiationAwareBeanPostProcessors()) {
+      for (BeanPostProcessor bp : getBeanPostProcessors()) {
+          if (bp instanceof SmartInstantiationAwareBeanPostProcessor) {
+              SmartInstantiationAwareBeanPostProcessor ibp = 
+                  (SmartInstantiationAwareBeanPostProcessor) bp;
+              Constructor<?>[] ctors = ibp.determineCandidateConstructors(beanClass, beanName);
+              if (ctors != null) {
+                  return ctors;
+              }
+          }
+      }
+  }
+  return null;
+}
+```
+可见是由SmartInstantiationAwareBeanPostProcessor决定的，默认是没有配置这种东西的。<br/>
+之后就是判断bean的自动装配模式，可以通过如下方式配置:<br/>
+`<bean id="student" class="base.Student" primary="true" autowire="default" />`<br/>
+autowire共有以下几种选项:<br/>
+~ no: 默认的，不进行自动装配。在这种情况下，只能通过ref方式引用其它bean。<br/>
+~ byName: 根据bean里面属性的名字在BeanFactory中进行查找并装配。<br/>
+~ byType: 按类型。<br/>
+~ constructor: 以byType的方式查找bean的构造参数列表。<br/>
+~ default: 由父bean决定。<br/>
+[Spring - bean的autowire属性(自动装配)](../bean_module/Spring%20-%20bean的autowire属性(自动装配).md)
+
+autowireConstructor调用的是ConstructorResolver.autowireConstructor，此方法主要做了两件事:<br/>
+~ 得到合适的构造器对象。<br/>
+~ 根据构造器参数的类型去BeanFactory查找相应的bean:<br/>
+入口方法在ConstructorResolver.resolveAutowiredArgument:
+```
+protected Object resolveAutowiredArgument(
+        MethodParameter param, String beanName, Set<String> autowiredBeanNames, 
+        TypeConverter typeConverter) {
+    return this.beanFactory.resolveDependency(
+            new DependencyDescriptor(param, true), beanName, 
+            autowiredBeanNames, typeConverter);
+}
+```
+最终调用的还是CglibSubclassingInstantiationStrategy.instantiate方法，关键源码:
+```
+@Override
+public Object instantiate(RootBeanDefinition bd, String beanName, BeanFactory owner,
+      final Constructor<?> ctor, Object... args) {
+  if (bd.getMethodOverrides().isEmpty()) {
+           //反射调用
+      return BeanUtils.instantiateClass(ctor, args);
+  } else {
+      return instantiateWithMethodInjection(bd, beanName, owner, ctor, args);
+  }
+}
+```
+可以看出，如果配置了lookup-method标签，**得到的实际上是用Cglib生成的目标类的代理子类**。<br/>
+CglibSubclassingInstantiationStrategy.instantiateWithMethodInjection:<br/>
+```
+@Override
+protected Object instantiateWithMethodInjection(RootBeanDefinition bd, String beanName, BeanFactory 	owner,Constructor<?> ctor, Object... args) {
+  // Must generate CGLIB subclass...
+  return new CglibSubclassCreator(bd, owner).instantiate(ctor, args);
+}
+```
+- 默认构造器<br/>
+`return instantiateBean(beanName, mbd);`<br/>
+_MergedBeanDefinitionPostProcessor_<br/>
+```
+触发源码
+synchronized (mbd.postProcessingLock) {
+    if (!mbd.postProcessed) {
+        applyMergedBeanDefinitionPostProcessors(mbd, beanType, beanName);
+        mbd.postProcessed = true;
+    }
+}
+```
+
+
+
+
+
 
 
 
