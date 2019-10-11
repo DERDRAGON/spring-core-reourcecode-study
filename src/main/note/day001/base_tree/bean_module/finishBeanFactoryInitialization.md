@@ -468,16 +468,84 @@ protected BeanWrapper instantiateUsingFactoryMethod(
 
 instantiateUsingFactoryMethod部分源码:
 ```
-beanInstance = this.beanFactory.getInstantiationStrategy().instantiate(
-    mbd, beanName, this.beanFactory, factoryBean, factoryMethodToUse, argsToUse);
+org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.instantiateUsingFactoryMethod
+Assert.state(argsToUse != null, "Unresolved factory method arguments");
+bw.setBeanInstance(instantiate(beanName, mbd, factoryBean, factoryMethodToUse, argsToUse));
+return bw;
+--> org.springframework.beans.factory.support.ConstructorResolver.instantiate(java.lang.String, org.springframework.beans.factory.support.RootBeanDefinition, java.lang.Object, java.lang.reflect.Method, java.lang.Object[])
+private Object instantiate(String beanName, RootBeanDefinition mbd,
+			@Nullable Object factoryBean, Method factoryMethod, Object[] args) {
+    try {
+        if (System.getSecurityManager() != null) {
+            return AccessController.doPrivileged((PrivilegedAction<Object>) () ->
+                    this.beanFactory.getInstantiationStrategy().instantiate(
+                            mbd, beanName, this.beanFactory, factoryBean, factoryMethod, args),
+                    this.beanFactory.getAccessControlContext());
+        }
+        else {
+            *******return this.beanFactory.getInstantiationStrategy().instantiate(
+                    mbd, beanName, this.beanFactory, factoryBean, factoryMethod, args);******
+        }
+    }
+    catch (Throwable ex) {
+        throw new BeanCreationException(mbd.getResourceDescription(), beanName,
+                "Bean instantiation via factory method failed", ex);
+    }
+}
 ```
 getInstantiationStrategy返回的是CglibSubclassingInstantiationStrategy对象。此处instantiate实现也很简单，就是调用工厂方法的Method对象反射调用其invoke即可得到对象，SimpleInstantiationStrategy.
 instantiate核心源码:
 ```
+org.springframework.beans.factory.support.SimpleInstantiationStrategy.instantiate(org.springframework.beans.factory.support.RootBeanDefinition, java.lang.String, org.springframework.beans.factory.BeanFactory, java.lang.Object, java.lang.reflect.Method, java.lang.Object...)
 @Override
-public Object instantiate(RootBeanDefinition bd, String beanName, BeanFactory owner,
-    Object factoryBean, final Method factoryMethod, Object... args) {
-    return factoryMethod.invoke(factoryBean, args);
+	public Object instantiate(RootBeanDefinition bd, @Nullable String beanName, BeanFactory owner,
+			@Nullable Object factoryBean, final Method factoryMethod, Object... args) {
+    try {
+        if (System.getSecurityManager() != null) {
+            AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
+                ReflectionUtils.makeAccessible(factoryMethod);
+                return null;
+            });
+        }
+        else {
+            ReflectionUtils.makeAccessible(factoryMethod);
+        }
+        Method priorInvokedFactoryMethod = currentlyInvokedFactoryMethod.get();
+        try {
+            currentlyInvokedFactoryMethod.set(factoryMethod);
+            *******Object result = factoryMethod.invoke(factoryBean, args);******
+            if (result == null) {
+                result = new NullBean();
+            }
+            return result;
+        }
+        finally {
+            if (priorInvokedFactoryMethod != null) {
+                currentlyInvokedFactoryMethod.set(priorInvokedFactoryMethod);
+            }
+            else {
+                currentlyInvokedFactoryMethod.remove();
+            }
+        }
+    }
+    catch (IllegalArgumentException ex) {
+        throw new BeanInstantiationException(factoryMethod,
+                "Illegal arguments to factory method '" + factoryMethod.getName() + "'; " +
+                "args: " + StringUtils.arrayToCommaDelimitedString(args), ex);
+    }
+    catch (IllegalAccessException ex) {
+        throw new BeanInstantiationException(factoryMethod,
+                "Cannot access factory method '" + factoryMethod.getName() + "'; is it public?", ex);
+    }
+    catch (InvocationTargetException ex) {
+        String msg = "Factory method '" + factoryMethod.getName() + "' threw exception";
+        if (bd.getFactoryBeanName() != null && owner instanceof ConfigurableBeanFactory &&
+                ((ConfigurableBeanFactory) owner).isCurrentlyInCreation(bd.getFactoryBeanName())) {
+            msg = "Circular reference involving containing bean '" + bd.getFactoryBeanName() + "' - consider " +
+                    "declaring the factory method as static for independence from its containing instance. " + msg;
+        }
+        throw new BeanInstantiationException(factoryMethod, msg, ex.getTargetException());
+    }
 }
 ```
 - 构造器自动装配
@@ -494,6 +562,7 @@ if (ctors != null ||
 ```
 determineConstructorsFromBeanPostProcessors源码:
 ```
+org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBeanInstance
 protected Constructor<?>[] determineConstructorsFromBeanPostProcessors(Class<?> beanClass, String beanName) {
   if (beanClass != null && hasInstantiationAwareBeanPostProcessors()) {
       for (BeanPostProcessor bp : getBeanPostProcessors()) {
@@ -526,6 +595,184 @@ autowireConstructor调用的是ConstructorResolver.autowireConstructor，此方�
 ~ 根据构造器参数的类型去BeanFactory查找相应的bean:<br/>
 入口方法在ConstructorResolver.resolveAutowiredArgument:
 ```
+org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.autowireConstructor
+protected BeanWrapper autowireConstructor(
+			String beanName, RootBeanDefinition mbd, @Nullable Constructor<?>[] ctors, @Nullable Object[] explicitArgs) {
+    return new ConstructorResolver(this).autowireConstructor(beanName, mbd, ctors, explicitArgs);
+}
+-->
+org.springframework.beans.factory.support.ConstructorResolver.autowireConstructor
+public BeanWrapper autowireConstructor(String beanName, RootBeanDefinition mbd,
+			@Nullable Constructor<?>[] chosenCtors, @Nullable Object[] explicitArgs) {
+    BeanWrapperImpl bw = new BeanWrapperImpl();
+    this.beanFactory.initBeanWrapper(bw);
+
+    Constructor<?> constructorToUse = null;
+    ArgumentsHolder argsHolderToUse = null;
+    Object[] argsToUse = null;
+
+    if (explicitArgs != null) {
+        argsToUse = explicitArgs;
+    }
+    else {
+        Object[] argsToResolve = null;
+        synchronized (mbd.constructorArgumentLock) {
+            constructorToUse = (Constructor<?>) mbd.resolvedConstructorOrFactoryMethod;
+            if (constructorToUse != null && mbd.constructorArgumentsResolved) {
+                // Found a cached constructor...
+                argsToUse = mbd.resolvedConstructorArguments;
+                if (argsToUse == null) {
+                    argsToResolve = mbd.preparedConstructorArguments;
+                }
+            }
+        }
+        if (argsToResolve != null) {
+            ****argsToUse = resolvePreparedArguments(beanName, mbd, bw, constructorToUse, argsToResolve, true);****
+        }
+    }
+
+    if (constructorToUse == null || argsToUse == null) {
+        // Take specified constructors, if any.
+        Constructor<?>[] candidates = chosenCtors;
+        if (candidates == null) {
+            Class<?> beanClass = mbd.getBeanClass();
+            try {
+                candidates = (mbd.isNonPublicAccessAllowed() ?
+                        beanClass.getDeclaredConstructors() : beanClass.getConstructors());
+            }
+            catch (Throwable ex) {
+                throw new BeanCreationException(mbd.getResourceDescription(), beanName,
+                        "Resolution of declared constructors on bean Class [" + beanClass.getName() +
+                        "] from ClassLoader [" + beanClass.getClassLoader() + "] failed", ex);
+            }
+        }
+
+        if (candidates.length == 1 && explicitArgs == null && !mbd.hasConstructorArgumentValues()) {
+            Constructor<?> uniqueCandidate = candidates[0];
+            if (uniqueCandidate.getParameterCount() == 0) {
+                synchronized (mbd.constructorArgumentLock) {
+                    mbd.resolvedConstructorOrFactoryMethod = uniqueCandidate;
+                    mbd.constructorArgumentsResolved = true;
+                    mbd.resolvedConstructorArguments = EMPTY_ARGS;
+                }
+                bw.setBeanInstance(instantiate(beanName, mbd, uniqueCandidate, EMPTY_ARGS));
+                return bw;
+            }
+        }
+
+        // Need to resolve the constructor.
+        boolean autowiring = (chosenCtors != null ||
+                mbd.getResolvedAutowireMode() == AutowireCapableBeanFactory.AUTOWIRE_CONSTRUCTOR);
+        ConstructorArgumentValues resolvedValues = null;
+
+        int minNrOfArgs;
+        if (explicitArgs != null) {
+            minNrOfArgs = explicitArgs.length;
+        }
+        else {
+            ConstructorArgumentValues cargs = mbd.getConstructorArgumentValues();
+            resolvedValues = new ConstructorArgumentValues();
+            minNrOfArgs = resolveConstructorArguments(beanName, mbd, bw, cargs, resolvedValues);
+        }
+
+        AutowireUtils.sortConstructors(candidates);
+        int minTypeDiffWeight = Integer.MAX_VALUE;
+        Set<Constructor<?>> ambiguousConstructors = null;
+        LinkedList<UnsatisfiedDependencyException> causes = null;
+
+        for (Constructor<?> candidate : candidates) {
+            Class<?>[] paramTypes = candidate.getParameterTypes();
+
+            if (constructorToUse != null && argsToUse != null && argsToUse.length > paramTypes.length) {
+                // Already found greedy constructor that can be satisfied ->
+                // do not look any further, there are only less greedy constructors left.
+                break;
+            }
+            if (paramTypes.length < minNrOfArgs) {
+                continue;
+            }
+
+            ArgumentsHolder argsHolder;
+            if (resolvedValues != null) {
+                try {
+                    String[] paramNames = ConstructorPropertiesChecker.evaluate(candidate, paramTypes.length);
+                    if (paramNames == null) {
+                        ParameterNameDiscoverer pnd = this.beanFactory.getParameterNameDiscoverer();
+                        if (pnd != null) {
+                            paramNames = pnd.getParameterNames(candidate);
+                        }
+                    }
+                    argsHolder = createArgumentArray(beanName, mbd, resolvedValues, bw, paramTypes, paramNames,
+                            getUserDeclaredConstructor(candidate), autowiring, candidates.length == 1);
+                }
+                catch (UnsatisfiedDependencyException ex) {
+                    if (logger.isTraceEnabled()) {
+                        logger.trace("Ignoring constructor [" + candidate + "] of bean '" + beanName + "': " + ex);
+                    }
+                    // Swallow and try next constructor.
+                    if (causes == null) {
+                        causes = new LinkedList<>();
+                    }
+                    causes.add(ex);
+                    continue;
+                }
+            }
+            else {
+                // Explicit arguments given -> arguments length must match exactly.
+                if (paramTypes.length != explicitArgs.length) {
+                    continue;
+                }
+                argsHolder = new ArgumentsHolder(explicitArgs);
+            }
+
+            int typeDiffWeight = (mbd.isLenientConstructorResolution() ?
+                    argsHolder.getTypeDifferenceWeight(paramTypes) : argsHolder.getAssignabilityWeight(paramTypes));
+            // Choose this constructor if it represents the closest match.
+            if (typeDiffWeight < minTypeDiffWeight) {
+                constructorToUse = candidate;
+                argsHolderToUse = argsHolder;
+                argsToUse = argsHolder.arguments;
+                minTypeDiffWeight = typeDiffWeight;
+                ambiguousConstructors = null;
+            }
+            else if (constructorToUse != null && typeDiffWeight == minTypeDiffWeight) {
+                if (ambiguousConstructors == null) {
+                    ambiguousConstructors = new LinkedHashSet<>();
+                    ambiguousConstructors.add(constructorToUse);
+                }
+                ambiguousConstructors.add(candidate);
+            }
+        }
+
+        if (constructorToUse == null) {
+            if (causes != null) {
+                UnsatisfiedDependencyException ex = causes.removeLast();
+                for (Exception cause : causes) {
+                    this.beanFactory.onSuppressedException(cause);
+                }
+                throw ex;
+            }
+            throw new BeanCreationException(mbd.getResourceDescription(), beanName,
+                    "Could not resolve matching constructor " +
+                    "(hint: specify index/type/name arguments for simple parameters to avoid type ambiguities)");
+        }
+        else if (ambiguousConstructors != null && !mbd.isLenientConstructorResolution()) {
+            throw new BeanCreationException(mbd.getResourceDescription(), beanName,
+                    "Ambiguous constructor matches found in bean '" + beanName + "' " +
+                    "(hint: specify index/type/name arguments for simple parameters to avoid type ambiguities): " +
+                    ambiguousConstructors);
+        }
+
+        if (explicitArgs == null && argsHolderToUse != null) {
+            argsHolderToUse.storeCache(mbd, constructorToUse);
+        }
+    }
+
+    Assert.state(argsToUse != null, "Unresolved constructor arguments");
+    bw.setBeanInstance(instantiate(beanName, mbd, constructorToUse, argsToUse));
+    return bw;
+}
+org.springframework.beans.factory.support.ConstructorResolver.resolvePreparedArguments
 protected Object resolveAutowiredArgument(
         MethodParameter param, String beanName, Set<String> autowiredBeanNames, 
         TypeConverter typeConverter) {
@@ -568,7 +815,229 @@ synchronized (mbd.postProcessingLock) {
     }
 }
 ```
+- 属性解析<br/>
+入口方法: AbstractAutowireCapableBeanFactory.populateBean，它的作用是: 根据autowire类型进行autowire by name，by type 或者是直接进行设置，源码:
+```
+org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.populateBean
+@SuppressWarnings("deprecation")  // for postProcessPropertyValues
+protected void populateBean(String beanName, RootBeanDefinition mbd, @Nullable BeanWrapper bw) {
+    if (bw == null) {
+        if (mbd.hasPropertyValues()) {
+            throw new BeanCreationException(
+                    mbd.getResourceDescription(), beanName, "Cannot apply property values to null instance");
+        }
+        else {
+            // Skip property population phase for null instance.
+            return;
+        }
+    }
 
+    // Give any InstantiationAwareBeanPostProcessors the opportunity to modify the
+    // state of the bean before properties are set. This can be used, for example,
+    // to support styles of field injection.
+    boolean continueWithPropertyPopulation = true;
+
+    if (!mbd.isSynthetic() && hasInstantiationAwareBeanPostProcessors()) {
+        for (BeanPostProcessor bp : getBeanPostProcessors()) {
+            if (bp instanceof InstantiationAwareBeanPostProcessor) {
+                InstantiationAwareBeanPostProcessor ibp = (InstantiationAwareBeanPostProcessor) bp;
+                if (!ibp.postProcessAfterInstantiation(bw.getWrappedInstance(), beanName)) {
+                    continueWithPropertyPopulation = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!continueWithPropertyPopulation) {
+        return;
+    }
+
+    PropertyValues pvs = (mbd.hasPropertyValues() ? mbd.getPropertyValues() : null);
+
+    if (mbd.getResolvedAutowireMode() == AUTOWIRE_BY_NAME || mbd.getResolvedAutowireMode() == AUTOWIRE_BY_TYPE) {
+        MutablePropertyValues newPvs = new MutablePropertyValues(pvs);
+        // Add property values based on autowire by name if applicable.
+        if (mbd.getResolvedAutowireMode() == AUTOWIRE_BY_NAME) {
+            autowireByName(beanName, mbd, bw, newPvs); ⬇️
+        }
+        // Add property values based on autowire by type if applicable.
+        if (mbd.getResolvedAutowireMode() == AUTOWIRE_BY_TYPE) {
+            autowireByType(beanName, mbd, bw, newPvs);
+        }
+        pvs = newPvs;
+    }
+
+    boolean hasInstAwareBpps = hasInstantiationAwareBeanPostProcessors();
+    boolean needsDepCheck = (mbd.getDependencyCheck() != AbstractBeanDefinition.DEPENDENCY_CHECK_NONE);
+
+    PropertyDescriptor[] filteredPds = null;
+    if (hasInstAwareBpps) {
+        if (pvs == null) {
+            pvs = mbd.getPropertyValues();
+        }
+        for (BeanPostProcessor bp : getBeanPostProcessors()) {
+            if (bp instanceof InstantiationAwareBeanPostProcessor) {
+                InstantiationAwareBeanPostProcessor ibp = (InstantiationAwareBeanPostProcessor) bp;
+                PropertyValues pvsToUse = ibp.postProcessProperties(pvs, bw.getWrappedInstance(), beanName);
+                if (pvsToUse == null) {
+                    if (filteredPds == null) {
+                        filteredPds = filterPropertyDescriptorsForDependencyCheck(bw, mbd.allowCaching);
+                    }
+                    pvsToUse = ibp.postProcessPropertyValues(pvs, filteredPds, bw.getWrappedInstance(), beanName);
+                    if (pvsToUse == null) {
+                        return;
+                    }
+                }
+                pvs = pvsToUse;
+            }
+        }
+    }
+    if (needsDepCheck) {
+        if (filteredPds == null) {
+            filteredPds = filterPropertyDescriptorsForDependencyCheck(bw, mbd.allowCaching);
+        }
+        checkDependencies(beanName, mbd, filteredPds, pvs);
+    }
+
+    if (pvs != null) {
+        applyPropertyValues(beanName, mbd, bw, pvs);
+    }
+}
+```
+autowireByName
+```
+protected void autowireByName(
+			String beanName, AbstractBeanDefinition mbd, BeanWrapper bw, MutablePropertyValues pvs) {
+    String[] propertyNames = unsatisfiedNonSimpleProperties(mbd, bw);
+    for (String propertyName : propertyNames) {
+        if (containsBean(propertyName)) {
+            Object bean = getBean(propertyName);
+            pvs.add(propertyName, bean);
+            registerDependentBean(propertyName, beanName);
+            if (logger.isTraceEnabled()) {
+                logger.trace("Added autowiring by name from bean name '" + beanName +
+                        "' via property '" + propertyName + "' to bean named '" + propertyName + "'");
+            }
+        }
+        else {
+            if (logger.isTraceEnabled()) {
+                logger.trace("Not autowiring property '" + propertyName + "' of bean '" + beanName +
+                        "' by name: no matching bean found");
+            }
+        }
+    }
+}
+```
+autowireByType也是同样的设计，所以可以得出结论: autowireByName和autowireByType方法只是先获取到引用的bean，真正的设值是在上面的applyPropertyValues中进行的。（org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.applyPropertyValues）<br/>
+属性设置<br/>
+Spring判断一个属性可不可以被设置(存不存在)是通过java bean的内省操作来完成的，也就是说，属性可以被设置的条件是**此属性拥有public的setter方法，并且注入时的属性名应该是setter的名字**。<br/>
+
+- 初始化<br/>
+此处的初始化指的是bean已经构造完成，执行诸如调用其init方法的操作。相关源码:<br/>
+```
+org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean{
+    // Initialize the bean instance.
+    Object exposedObject = bean;
+    try {
+        populateBean(beanName, mbd, instanceWrapper);
+        if (exposedObject != null) {
+            exposedObject = initializeBean(beanName, exposedObject, mbd);
+        }
+    }
+}
+org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.initializeBean(java.lang.String, java.lang.Object, org.springframework.beans.factory.support.RootBeanDefinition):
+protected Object initializeBean(final String beanName, final Object bean, @Nullable RootBeanDefinition mbd) {
+    if (System.getSecurityManager() != null) {
+        AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
+            invokeAwareMethods(beanName, bean);
+            return null;
+        }, getAccessControlContext());
+    }
+    else {
+        invokeAwareMethods(beanName, bean);
+    }
+
+    Object wrappedBean = bean;
+    if (mbd == null || !mbd.isSynthetic()) {
+        wrappedBean = applyBeanPostProcessorsBeforeInitialization(wrappedBean, beanName);
+    }
+
+    try {
+        invokeInitMethods(beanName, wrappedBean, mbd);
+    }
+    catch (Throwable ex) {
+        throw new BeanCreationException(
+                (mbd != null ? mbd.getResourceDescription() : null),
+                beanName, "Invocation of init method failed", ex);
+    }
+    if (mbd == null || !mbd.isSynthetic()) {
+        wrappedBean = applyBeanPostProcessorsAfterInitialization(wrappedBean, beanName);
+    }
+
+    return wrappedBean;
+}
+```
+[bean初始化](./bean初始化-initializeBean.md)
+
+- getObjectForBeanInstance<br/>
+位于AbstractBeanFactory，此方法的目的在于如果bean是FactoryBean，那么返回其工厂方法创建的bean，而不是自身。<br/>
+
+#### Prototype初始化
+AbstractBeanFactory.doGetBean相关源码:
+org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean --> mbd.isPrototype()
+```
+else if (mbd.isPrototype()) {
+    // It's a prototype -> create a new instance.
+    Object prototypeInstance = null;
+    try {
+        // 此方法用于确保在同一时刻只能有一个此bean在初始化。
+        beforePrototypeCreation(beanName);
+        // 同上createBean
+        prototypeInstance = createBean(beanName, mbd, args);
+    }
+    finally {
+        // 与beforePrototypeCreation对应的
+        afterPrototypeCreation(beanName);
+    }
+    bean = getObjectForBeanInstance(prototypeInstance, name, beanName, mbd);
+}
+```
+**初始化其实和单例是一样的，只不过单例多了一个是否已经存在的检查。**
+
+#### 其它Scope初始化
+指的是request、session。此部分源码:
+```
+else {
+    String scopeName = mbd.getScope();
+    final Scope scope = this.scopes.get(scopeName);
+    if (scope == null) {
+        throw new IllegalStateException("No Scope registered for scope name '" + scopeName + "'");
+    }
+    try {
+        Object scopedInstance = scope.get(beanName, () -> {
+            beforePrototypeCreation(beanName);
+            try {
+                return createBean(beanName, mbd, args);
+            }
+            finally {
+                afterPrototypeCreation(beanName);
+            }
+        });
+        bean = getObjectForBeanInstance(scopedInstance, name, beanName, mbd);
+    }
+    catch (IllegalStateException ex) {
+        throw new BeanCreationException(beanName,
+                "Scope '" + scopeName + "' is not active for the current thread; consider " +
+                "defining a scoped proxy for this bean if you intend to refer to it from a singleton",
+                ex);
+    }
+}
+```
+scopes是一个LinkedHashMap<String, Scope>，可以调用 ConfigurableBeanFactory定义的registerScope方法注册其值。<br/>
+Scope接口继承体系:<br/>
+![Scope接口继承体系](../../image/Scope接口继承体系.jpg)<br/>
+根据scope.get的注释，此方法如果找到了叫做beanName的bean，那么返回，如果没有，将调用ObjectFactory创建。
 
 
 
