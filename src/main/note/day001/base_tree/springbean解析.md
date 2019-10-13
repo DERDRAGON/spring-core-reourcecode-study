@@ -293,7 +293,7 @@ AbstractApplicationContext的initMessageSource()方法就是在BeanFactory中查
 那么调用getBean方法完成其初始化并将其保存在AbstractApplicationContext内部messageSource成员变量中，用以处理ApplicationContext的getMessage调用，
 因为从继承体系上来看，ApplicationContext是MessageSource的子类，此处是委托模式的体现。
 如果没有配置此bean，那么初始化一个DelegatingMessageSource对象，此类是一个空实现，同样用以处理getMessage调用请求。
-![AbstractApplicationContext的initMessageSource](./bean_module/initMessageSource.md)
+[AbstractApplicationContext的initMessageSource](./bean_module/initMessageSource.md)
 
 8、事件驱动
 ```
