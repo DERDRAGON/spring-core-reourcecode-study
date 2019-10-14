@@ -9,7 +9,7 @@ public BeanDefinition parse(Element element, ParserContext parserContext) {
             new CompositeComponentDefinition(element.getTagName(), parserContext.extractSource(element));
     parserContext.pushContainingComponent(compositeDef);
 
-    configureAutoProxyCreator(parserContext, element); ⬇️ -- proxy-target-class & expose-proxy
+    configureAutoProxyCreator(parserContext, element); ⬇️ -- proxy-target-class & expose-proxy  ++ 代理子类生成
 
     List<Element> childElts = DomUtils.getChildElements(element);
     for (Element elt: childElts) {
@@ -21,7 +21,7 @@ public BeanDefinition parse(Element element, ParserContext parserContext) {
             parseAdvisor(elt, parserContext); ⬇️ -- aop:advisor
         }
         else if (ASPECT.equals(localName)) {
-            parseAspect(elt, parserContext);
+            parseAspect(elt, parserContext); ⬇️ -- aop:aspect
         }
     }
 
@@ -412,5 +412,418 @@ private Class<?> getAdviceClass(Element adviceElement, ParserContext parserConte
     }
 }
 ```
+而此BeanDefinition的构造参数又由以下三个部分组成:
+
+**MethodLocatingFactoryBean**<br/>
+第一个便是beanClass为此类型的BeanDefinition。其内部有一个methodName属性，存储的便是标签的method属性的值。其类图:<br/>
+![MethodLocatingFactoryBean](../image/MethodLocatingFactoryBean.png)
+```
+出现位置org.springframework.aop.config.ConfigBeanDefinitionParser.parseAdvice
+RootBeanDefinition methodDefinition = new RootBeanDefinition(MethodLocatingFactoryBean.class);
+methodDefinition.getPropertyValues().add("targetBeanName", aspectName);
+methodDefinition.getPropertyValues().add("methodName", adviceElement.getAttribute("method"));
+methodDefinition.setSynthetic(true);
+```
+这个东西是干什么用的呢?其实是用于在指定的advice(aop:aspect的ref属性)中得到Method对象。入口在setBeanFactory方法:
+```
+@Override
+public void setBeanFactory(BeanFactory beanFactory) {
+    Class<?> beanClass = beanFactory.getType(this.targetBeanName);
+    this.method = BeanUtils.resolveSignature(this.methodName, beanClass);
+}
+```
+SimpleBeanFactoryAwareAspectInstanceFactory
+```
+RootBeanDefinition aspectFactoryDef = new RootBeanDefinition(SimpleBeanFactoryAwareAspectInstanceFactory.class);
+aspectFactoryDef.getPropertyValues().add("aspectBeanName", aspectName);
+aspectFactoryDef.setSynthetic(true);
+```
+类图
+![SimpleBeanFactoryAwareAspectInstanceFactory](../image/SimpleBeanFactoryAwareAspectInstanceFactory.png)
+此类用于在BeanFactory中定位aspect bean，这个bean指的是谁?`<bean id="aopAdvice" class="base.aop.AopDemoAdvice" />`
+
+**总结**<br/>
+从整个aop:aspect标签最终被解析为一个AspectJPointcutAdvisor来看，Spring在实现上仍将其作为Advisor的概念。<br/>
+
+
+## 代理子类生成
+```
+org.springframework.aop.config.ConfigBeanDefinitionParser.configureAutoProxyCreator
+private void configureAutoProxyCreator(ParserContext parserContext, Element element) {
+    AopNamespaceUtils.registerAspectJAutoProxyCreatorIfNecessary(parserContext, element);
+}
+org.springframework.aop.config.AopNamespaceUtils.registerAspectJAutoProxyCreatorIfNecessary
+public static void registerAspectJAutoProxyCreatorIfNecessary(
+			ParserContext parserContext, Element sourceElement) {
+    BeanDefinition beanDefinition = AopConfigUtils.registerAspectJAutoProxyCreatorIfNecessary(
+            parserContext.getRegistry(), parserContext.extractSource(sourceElement));
+    useClassProxyingIfNecessary(parserContext.getRegistry(), sourceElement);
+    registerComponentIfNecessary(beanDefinition, parserContext);
+}
+org.springframework.aop.config.AopConfigUtils.registerAspectJAutoProxyCreatorIfNecessary(org.springframework.beans.factory.support.BeanDefinitionRegistry, java.lang.Object)
+public static BeanDefinition registerAspectJAutoProxyCreatorIfNecessary(
+			BeanDefinitionRegistry registry, @Nullable Object source) {
+    return registerOrEscalateApcAsRequired(AspectJAwareAdvisorAutoProxyCreator.class, registry, source);
+}
+```
+关键在于AspectJAwareAdvisorAutoProxyCreator，此对象在ConfigBeanDefinitionParser的configureAutoProxyCreator方法中注册，其类图:<br/>
+![AspectJAwareAdvisorAutoProxyCreator](../image/AspectJAwareAdvisorAutoProxyCreator.png)<br/>
+### 入口
+从AspectJAwareAdvisorAutoProxyCreator的类图中可以看出，此类实现了SmartInstantiationAwareBeanPostProcessor接口，
+所以很容易想到入口应该位于此接口及其父接口(BeanPostProcessor)的相关方法中。实际上确实是这样的。
+#### postProcessBeforeInstantiation
+
+##### 调用时机
+此方法在Bean创建的过程中的调用时机。AbstractAutowireCapableBeanFactory.createBean部分源码:
+```
+org.springframework.context.support.AbstractApplicationContext.refresh -->
+org.springframework.context.support.AbstractApplicationContext.finishBeanFactoryInitialization -->
+org.springframework.context.support.AbstractApplicationContext.getBean(java.lang.String) -->
+org.springframework.beans.factory.support.AbstractBeanFactory.getBean(java.lang.String) -->
+org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(java.lang.String, org.springframework.beans.factory.support.RootBeanDefinition, java.lang.Object[])
+//// Give BeanPostProcessors a chance to return a proxy instead of the target bean instance.
+Object bean = resolveBeforeInstantiation(beanName, mbdToUse);
+if (bean != null) {
+    return bean;
+}
+Object beanInstance = doCreateBean(beanName, mbdToUse, args);
+```
+AbstractAutoProxyCreator.postProcessBeforeInstantiation:
+```
+承接上段Object bean = resolveBeforeInstantiation(beanName, mbdToUse);
+org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.resolveBeforeInstantiation
+protected Object resolveBeforeInstantiation(String beanName, RootBeanDefinition mbd) {
+    Object bean = null;
+    if (!Boolean.FALSE.equals(mbd.beforeInstantiationResolved)) {
+        // Make sure bean class is actually resolved at this point.
+        if (!mbd.isSynthetic() && hasInstantiationAwareBeanPostProcessors()) {
+            Class<?> targetType = determineTargetType(beanName, mbd);
+            if (targetType != null) {
+                bean = applyBeanPostProcessorsBeforeInstantiation(targetType, beanName); ⬇️ -- 进行applyBeanPostProcessorsBeforeInstantiation
+                if (bean != null) {
+                    bean = applyBeanPostProcessorsAfterInitialization(bean, beanName); ⬇️ -- 进行applyBeanPostProcessorsAfterInitialization
+                }
+            }
+        }
+        mbd.beforeInstantiationResolved = (bean != null);
+    }
+    return bean;
+}
+```
+###### 进行applyBeanPostProcessorsBeforeInstantiation
+```
+@Nullable
+protected Object applyBeanPostProcessorsBeforeInstantiation(Class<?> beanClass, String beanName) {
+    for (BeanPostProcessor bp : getBeanPostProcessors()) {
+        if (bp instanceof InstantiationAwareBeanPostProcessor) {
+            InstantiationAwareBeanPostProcessor ibp = (InstantiationAwareBeanPostProcessor) bp;
+            Object result = ibp.postProcessBeforeInstantiation(beanClass, beanName);
+            if (result != null) {
+                return result;
+            }
+        }
+    }
+    return null;
+}
+org.springframework.aop.framework.autoproxy.AbstractAutoProxyCreator.postProcessBeforeInstantiation
+@Override
+public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) {
+    Object cacheKey = getCacheKey(beanClass, beanName);
+    if (!StringUtils.hasLength(beanName) || !this.targetSourcedBeans.contains(beanName)) {
+        if (this.advisedBeans.containsKey(cacheKey)) {
+            return null;
+        }
+        if (isInfrastructureClass(beanClass) || shouldSkip(beanClass, beanName)) {
+            this.advisedBeans.put(cacheKey, Boolean.FALSE);
+            return null;
+        }
+    }
+    // Create proxy here if we have a custom TargetSource.
+    // Suppresses unnecessary default instantiation of the target bean:
+    // The TargetSource will handle target instances in a custom fashion.
+    TargetSource targetSource = getCustomTargetSource(beanClass, beanName);
+    if (targetSource != null) {
+        if (StringUtils.hasLength(beanName)) {
+            this.targetSourcedBeans.add(beanName);
+        }
+        Object[] specificInterceptors = getAdvicesAndAdvisorsForBean(beanClass, beanName, targetSource);
+        Object proxy = createProxy(beanClass, beanName, specificInterceptors, targetSource);
+        this.proxyTypes.put(cacheKey, proxy.getClass());
+        return proxy;
+    }
+    return null;
+}
+```
+上段代码说明：
+Spring首先会对当前的beanClass进行检查(是否应该/可以对其进行代理)。
+不应该代理的类分为两种情况:
+- 用于实现AOP的Spring基础类，此种情况在isInfrastructureClass方法中完成检测(单词Infrastructure正是基础设施的意思)。-- isInfrastructureClass(beanClass)
+- 子类定义的应该跳过的类，默认AbstractAutoProxyCreator的实现直接返回false，即都不应该跳过。-- shouldSkip(beanClass, beanName)
+```
+基础类检测
+org.springframework.aop.framework.autoproxy.AbstractAutoProxyCreator.isInfrastructureClass
+protected boolean isInfrastructureClass(Class<?> beanClass) {
+    boolean retVal = Advice.class.isAssignableFrom(beanClass) ||
+            Pointcut.class.isAssignableFrom(beanClass) ||
+            Advisor.class.isAssignableFrom(beanClass) ||
+            AopInfrastructureBean.class.isAssignableFrom(beanClass);
+    if (retVal && logger.isTraceEnabled()) {
+        logger.trace("Did not attempt to auto-proxy infrastructure class [" + beanClass.getName() + "]");
+    }
+    return retVal;
+}
+任何Advice、Pointcut、Advisor、AopInfrastructureBean的子类都被当做Spring实现AOP的基础设施类。
+```
+```
+跳过类检测
+即shouldSkip方法。前面提到了，AbstractAutoProxyCreator的默认实现直接返回fasle，这一特性被子类AspectJAwareAdvisorAutoProxyCreator重写:
+org.springframework.aop.aspectj.autoproxy.AspectJAwareAdvisorAutoProxyCreator.shouldSkip
+@Override
+protected boolean shouldSkip(Class<?> beanClass, String beanName) {
+    // TODO: Consider optimization by caching the list of the aspect names
+    List<Advisor> candidateAdvisors = findCandidateAdvisors();
+    for (Advisor advisor : candidateAdvisors) {
+        if (advisor instanceof AspectJPointcutAdvisor &&
+                ((AspectJPointcutAdvisor) advisor).getAspectName().equals(beanName)) {
+            return true;
+        }
+    }
+    return super.shouldSkip(beanClass, beanName);
+}
+此方法跳过的是我们通过aop:aspect标签配置的切面，即:
+<bean id="aopAdvice" class="base.aop.AopDemoAdvice" />
+<aop:config>
+    <aop:aspect ref="aopAdvice">
+    </aop:aspect>
+</aop:config>
+里的aopAdvice。
+```
+从前面的aop:aspect一节中可以知道，Spring对于aop:config的解析其实是把aop:before/after等标签解析成为了AspectJPointcutAdvisor类型的BeanDefinition，而aopAdvice以AbstractAspectJAdvice的类型保存在其中。
+所以可以得出结论: **Spring跳过的是适用于当前bean的Advisor的Advice/Aspect对象**。<br/>
+![AOP逻辑图](../image/aop_logic.jpg)<br/>
+_Advisor寻找_<br/>
+关键便是findCandidateAdvisors方法，此方法将逻辑委托给BeanFactoryAdvisorRetrievalHelper.findAdvisorBeans:<br/>
+```
+org.springframework.aop.framework.autoproxy.AbstractAdvisorAutoProxyCreator.findCandidateAdvisors
+protected List<Advisor> findCandidateAdvisors() {
+    Assert.state(this.advisorRetrievalHelper != null, "No BeanFactoryAdvisorRetrievalHelper available");
+    return this.advisorRetrievalHelper.findAdvisorBeans();
+}
+org.springframework.aop.framework.autoproxy.BeanFactoryAdvisorRetrievalHelper.findAdvisorBeans
+public List<Advisor> findAdvisorBeans() {
+    // Determine list of advisor bean names, if not cached already.
+    String[] advisorNames = this.cachedAdvisorBeanNames;
+    if (advisorNames == null) {
+        // Do not initialize FactoryBeans here: We need to leave all regular beans
+        // uninitialized to let the auto-proxy creator apply to them!
+        advisorNames = BeanFactoryUtils.beanNamesForTypeIncludingAncestors(
+                this.beanFactory, Advisor.class, true, false);
+        this.cachedAdvisorBeanNames = advisorNames;
+    }
+    if (advisorNames.length == 0) {
+        return new ArrayList<>();
+    }
+
+    List<Advisor> advisors = new ArrayList<>();
+    for (String name : advisorNames) {
+        // 适用性检测 ⬇️ 
+        if (isEligibleBean(name)) {
+            if (this.beanFactory.isCurrentlyInCreation(name)) {
+                if (logger.isTraceEnabled()) {
+                    logger.trace("Skipping currently created advisor '" + name + "'");
+                }
+            }
+            else {
+                try {
+                    advisors.add(this.beanFactory.getBean(name, Advisor.class));
+                }
+                catch (BeanCreationException ex) {
+                    Throwable rootCause = ex.getMostSpecificCause();
+                    if (rootCause instanceof BeanCurrentlyInCreationException) {
+                        BeanCreationException bce = (BeanCreationException) rootCause;
+                        String bceBeanName = bce.getBeanName();
+                        if (bceBeanName != null && this.beanFactory.isCurrentlyInCreation(bceBeanName)) {
+                            if (logger.isTraceEnabled()) {
+                                logger.trace("Skipping advisor '" + name +
+                                        "' with dependency on currently created bean: " + ex.getMessage());
+                            }
+                            // Ignore: indicates a reference back to the bean we're trying to advise.
+                            // We want to find advisors other than the currently created bean itself.
+                            continue;
+                        }
+                    }
+                    throw ex;
+                }
+            }
+        }
+    }
+    return advisors;
+}
+首先是从容器中获取到所有的Advisor示例，然后调用isEligibleBean方法逐一判断Advisor是否适用于当前bean。
+```
+适用性检测
+```
+org.springframework.aop.framework.autoproxy.BeanFactoryAdvisorRetrievalHelper.isEligibleBean
+protected boolean isEligibleBean(String beanName) {
+    return true;
+}
+```
+而AbstractAdvisorAutoProxyCreator的子类AspectJAwareAdvisorAutoProxyCreator并没有覆盖此方法，所以此处会对**容器中所有的Advisor的Advice进行跳过**。<br/>
+_检测结果缓存_<br/>
+因为postProcessBeforeInstantiation方法会在每个bean初始化之前被调用，所以没有必要每次都真的进行基础类检测和跳过类检测，Spring使用了advisedBeans作为缓存用以提高性能。<br/>
+_TargetSource_<br/>
+对于自定义的TargetSource，Spring会立即执行代理子类的创建。Spring的代理其实是针对TargetSource的，其类图:<br/>
+![TargetSource类图](../image/TargetSource.jpg)
+
+###### applyBeanPostProcessorsAfterInitialization
+org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.applyBeanPostProcessorsAfterInitialization
+```
+@Override
+public Object applyBeanPostProcessorsAfterInitialization(Object existingBean, String beanName)
+        throws BeansException {
+    Object result = existingBean;
+    for (BeanPostProcessor processor : getBeanPostProcessors()) {
+        Object current = processor.postProcessAfterInitialization(result, beanName);
+        if (current == null) {
+            return result;
+        }
+        result = current;
+    }
+    return result;
+}
+org.springframework.aop.framework.autoproxy.AbstractAutoProxyCreator.postProcessAfterInitialization
+@Override
+public Object postProcessAfterInitialization(@Nullable Object bean, String beanName) {
+    if (bean != null) {
+        Object cacheKey = getCacheKey(bean.getClass(), beanName);
+        if (this.earlyProxyReferences.remove(cacheKey) != bean) {
+            return wrapIfNecessary(bean, beanName, cacheKey);
+        }
+    }
+    return bean;
+}
+```
+关键便在于wrapIfNecessary方法:
+```
+org.springframework.aop.framework.autoproxy.AbstractAutoProxyCreator.wrapIfNecessary
+protected Object wrapIfNecessary(Object bean, String beanName, Object cacheKey) {
+    //自定义TargetSource，已经进行过代理子类生成
+    if (StringUtils.hasLength(beanName) && this.targetSourcedBeans.contains(beanName)) {
+        return bean;
+    }
+    if (Boolean.FALSE.equals(this.advisedBeans.get(cacheKey))) {
+        return bean;
+    }
+    if (isInfrastructureClass(bean.getClass()) || shouldSkip(bean.getClass(), beanName)) {
+        this.advisedBeans.put(cacheKey, Boolean.FALSE);
+        return bean;
+    }
+
+    // Create proxy if we have advice.
+    Object[] specificInterceptors = getAdvicesAndAdvisorsForBean(bean.getClass(), beanName, null);
+    if (specificInterceptors != DO_NOT_PROXY) {
+        this.advisedBeans.put(cacheKey, Boolean.TRUE);
+        Object proxy = createProxy(
+                bean.getClass(), beanName, specificInterceptors, new SingletonTargetSource(bean));
+        this.proxyTypes.put(cacheKey, proxy.getClass());
+        return proxy;
+    }
+
+    this.advisedBeans.put(cacheKey, Boolean.FALSE);
+    return bean;
+}
+```
+此方法的开头又进行了基础类以及跳过类的检测<br/>
+_Advisor寻找_<br/>
+即getAdvicesAndAdvisorsForBean方法，这里进行的便是去容器中寻找适用于当前bean的Advisor，最终调用的是AbstractAdvisorAutoProxyCreator.findEligibleAdvisors:<br/>
+```
+org.springframework.aop.framework.autoproxy.AbstractAdvisorAutoProxyCreator.getAdvicesAndAdvisorsForBean
+@Override
+@Nullable
+protected Object[] getAdvicesAndAdvisorsForBean(
+        Class<?> beanClass, String beanName, @Nullable TargetSource targetSource) {
+    List<Advisor> advisors = findEligibleAdvisors(beanClass, beanName);
+    if (advisors.isEmpty()) {
+        return DO_NOT_PROXY;
+    }
+    return advisors.toArray();
+}
+org.springframework.aop.framework.autoproxy.AbstractAdvisorAutoProxyCreator.findEligibleAdvisors
+protected List<Advisor> findEligibleAdvisors(Class<?> beanClass, String beanName) {
+    List<Advisor> candidateAdvisors = findCandidateAdvisors(); -- 同上
+    List<Advisor> eligibleAdvisors = findAdvisorsThatCanApply(candidateAdvisors, beanClass, beanName);
+    extendAdvisors(eligibleAdvisors);
+    if (!eligibleAdvisors.isEmpty()) {
+        eligibleAdvisors = sortAdvisors(eligibleAdvisors);
+    }
+    return eligibleAdvisors;
+}
+```
+`适用性判断`<br/>
+findAdvisorsThatCanApply最终调用AopUtils.findAdvisorsThatCanApply:<br/>
+```
+org.springframework.aop.framework.autoproxy.AbstractAdvisorAutoProxyCreator.findAdvisorsThatCanApply
+protected List<Advisor> findAdvisorsThatCanApply(
+			List<Advisor> candidateAdvisors, Class<?> beanClass, String beanName) {
+    ProxyCreationContext.setCurrentProxiedBeanName(beanName);
+    try {
+        return AopUtils.findAdvisorsThatCanApply(candidateAdvisors, beanClass);
+    }
+    finally {
+        ProxyCreationContext.setCurrentProxiedBeanName(null);
+    }
+}
+org.springframework.aop.support.AopUtils.findAdvisorsThatCanApply
+public static List<Advisor> findAdvisorsThatCanApply(List<Advisor> candidateAdvisors, Class<?> clazz) {
+    if (candidateAdvisors.isEmpty()) {
+        return candidateAdvisors;
+    }
+    List<Advisor> eligibleAdvisors = new ArrayList<>();
+    for (Advisor candidate : candidateAdvisors) {
+        if (candidate instanceof IntroductionAdvisor && canApply(candidate, clazz)) {
+            eligibleAdvisors.add(candidate);
+        }
+    }
+    boolean hasIntroductions = !eligibleAdvisors.isEmpty();
+    for (Advisor candidate : candidateAdvisors) {
+        if (candidate instanceof IntroductionAdvisor) {
+            // already processed
+            continue;
+        }
+        if (canApply(candidate, clazz, hasIntroductions)) {
+            eligibleAdvisors.add(candidate);
+        }
+    }
+    return eligibleAdvisors;
+}
+```
+关键在于canApply方法，从源码中可以看出，对于Advisor的判断分为了IntroductionAdvisor以及非IntroductionAdvisor两种情况。<br/>
+这种分开处理导致了**IntroductionAdvisor在Advisor链中总是位于非IntroductionAdvisor前面**。<br/>
+canApply(candidate, clazz)其实等价于canApply(candidate, clazz, false):<br/>
+```
+org.springframework.aop.support.AopUtils.canApply(org.springframework.aop.Advisor, java.lang.Class<?>, boolean)
+public static boolean canApply(Advisor advisor, Class<?> targetClass, boolean hasIntroductions) {
+    if (advisor instanceof IntroductionAdvisor) {
+        return ((IntroductionAdvisor) advisor).getClassFilter().matches(targetClass);
+    }
+    else if (advisor instanceof PointcutAdvisor) {
+        PointcutAdvisor pca = (PointcutAdvisor) advisor;
+        return canApply(pca.getPointcut(), targetClass, hasIntroductions);
+    }
+    else {
+        // It doesn't have a pointcut so we assume it applies.
+        return true;
+    }
+}
+```
+引入Advisor与其它Advisor是两种不同的判断方式。
+
+
+
+
+
+
+
+
 
 
