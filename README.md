@@ -5,3 +5,5 @@
 - [原项目地址](https://github.com/seaswalker/spring-analysis)
 
 - [spring-core](./src/main/note/day001/base.md)
+
+- [spring-aop](./src/main/note/day002/spring-aop.md)
