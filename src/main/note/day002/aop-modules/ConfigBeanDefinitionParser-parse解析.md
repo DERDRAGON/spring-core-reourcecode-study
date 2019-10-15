@@ -724,7 +724,7 @@ protected Object wrapIfNecessary(Object bean, String beanName, Object cacheKey) 
     if (specificInterceptors != DO_NOT_PROXY) {
         this.advisedBeans.put(cacheKey, Boolean.TRUE);
         Object proxy = createProxy(
-                bean.getClass(), beanName, specificInterceptors, new SingletonTargetSource(bean));
+                bean.getClass(), beanName, specificInterceptors, new SingletonTargetSource(bean)); ⬇️ -- 创建代理
         this.proxyTypes.put(cacheKey, proxy.getClass());
         return proxy;
     }
@@ -754,7 +754,7 @@ protected List<Advisor> findEligibleAdvisors(Class<?> beanClass, String beanName
     List<Advisor> eligibleAdvisors = findAdvisorsThatCanApply(candidateAdvisors, beanClass, beanName);
     extendAdvisors(eligibleAdvisors);
     if (!eligibleAdvisors.isEmpty()) {
-        eligibleAdvisors = sortAdvisors(eligibleAdvisors);
+        eligibleAdvisors = sortAdvisors(eligibleAdvisors); ⬇️ -- 排序
     }
     return eligibleAdvisors;
 }
@@ -817,12 +817,207 @@ public static boolean canApply(Advisor advisor, Class<?> targetClass, boolean ha
 }
 ```
 引入Advisor与其它Advisor是两种不同的判断方式。
+_引入_<br/>
+引入的概念在下面aop:scoped-proxy中有提到。因为引入的目的在于动态地向一个类添加另一种功能(接口)，所以只要判断给定的类是否是要引入到的类即可。<br/>
+_其它_<br/>
+AopUtils.canApply:
+```
+org.springframework.aop.support.AopUtils.canApply(org.springframework.aop.Pointcut, java.lang.Class<?>, boolean)
+public static boolean canApply(Pointcut pc, Class<?> targetClass, boolean hasIntroductions) {
+    Assert.notNull(pc, "Pointcut must not be null");
+    if (!pc.getClassFilter().matches(targetClass)) {
+        return false;
+    }
+    MethodMatcher methodMatcher = pc.getMethodMatcher();
+    if (methodMatcher == MethodMatcher.TRUE) {
+        // No need to iterate the methods if we're matching any method anyway...
+        return true;
+    }
+    IntroductionAwareMethodMatcher introductionAwareMethodMatcher = null;
+    if (methodMatcher instanceof IntroductionAwareMethodMatcher) {
+        introductionAwareMethodMatcher = (IntroductionAwareMethodMatcher) methodMatcher;
+    }
+    Set<Class<?>> classes = new LinkedHashSet<>();
+    if (!Proxy.isProxyClass(targetClass)) {
+        classes.add(ClassUtils.getUserClass(targetClass));
+    }
+    classes.addAll(ClassUtils.getAllInterfacesForClassAsSet(targetClass));
+    for (Class<?> clazz : classes) {
+        Method[] methods = ReflectionUtils.getAllDeclaredMethods(clazz);
+        for (Method method : methods) {
+            if (introductionAwareMethodMatcher != null ?
+                    introductionAwareMethodMatcher.matches(method, targetClass, hasIntroductions) :
+                    methodMatcher.matches(method, targetClass)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+```
+Spring的Pointcut由ClassFilter和MethodMatcher两部分组成，其中前者用以判断给定的类是否在Pointcut的匹配范围内，后者用以在ClassFilter匹配满足的情况下判断给定的方法是否在Pointcut匹配的范围内。<br/>
+从源码中可以看出，如果ClassFilter匹配得到满足并且Pointcut并不能匹配此类的任意方法，便会用反射的方法获取targetClass(被检测类)的全部方法逐一交由Pointcut的MethodMatcher进行检测。<br/>
+关于Pointcut表达式是如何解析及存储的在此不再展开。
+
+_Advisor扩展_<br/>
+AbstractAdvisorAutoProxyCreator.extendAdvisors允许子类向Advisor链表中添加自己的Advisor。子类AspectJAwareAdvisorAutoProxyCreator重写了此方法，其逻辑是:<br/>
+如果Advisor链表中的Advisor含有AspectJAdvice，那么将会把一个ExposeInvocationInterceptor添加到链表的表头，目的在于将MethodInvocation以ThreadLocal的方式暴露给后面所有的Advisor，暂不知道具体的用途。<br/>
+
+_排序_<br/>
+即sortAdvisors方法，用于对实现了Ordered接口的Advisor进行排序。<br/>
+```
+org.springframework.aop.framework.autoproxy.AbstractAdvisorAutoProxyCreator.sortAdvisors
+protected List<Advisor> sortAdvisors(List<Advisor> advisors) {
+    AnnotationAwareOrderComparator.sort(advisors);
+    return advisors;
+}
+```
+
+_创建代理_<br/>
+AbstractAutoProxyCreator.createProxy<br/>
+```
+org.springframework.aop.framework.autoproxy.AbstractAutoProxyCreator.createProxy
+protected Object createProxy(Class<?> beanClass, @Nullable String beanName,
+			@Nullable Object[] specificInterceptors, TargetSource targetSource) {
+    if (this.beanFactory instanceof ConfigurableListableBeanFactory) {
+        AutoProxyUtils.exposeTargetClass((ConfigurableListableBeanFactory) this.beanFactory, beanName, beanClass);
+    }
+    ProxyFactory proxyFactory = new ProxyFactory();
+    proxyFactory.copyFrom(this);
+    if (!proxyFactory.isProxyTargetClass()) {
+        if (shouldProxyTargetClass(beanClass, beanName)) {
+            proxyFactory.setProxyTargetClass(true);
+        }
+        else {
+            evaluateProxyInterfaces(beanClass, proxyFactory);
+        }
+    }
+    Advisor[] advisors = buildAdvisors(beanName, specificInterceptors);
+    proxyFactory.addAdvisors(advisors);
+    proxyFactory.setTargetSource(targetSource);
+    customizeProxyFactory(proxyFactory);
+    proxyFactory.setFrozen(this.freezeProxy);
+    if (advisorsPreFiltered()) {
+        proxyFactory.setPreFiltered(true);
+    }
+    return proxyFactory.getProxy(getProxyClassLoader()); ⬇️ -- JDK动态代理 or Cglib
+}
+```
+`JDK动态代理 or Cglib`<br/>
+```
+org.springframework.aop.framework.ProxyFactory.getProxy(java.lang.ClassLoader)
+public Object getProxy(@Nullable ClassLoader classLoader) {
+    return createAopProxy().getProxy(classLoader);
+}
+org.springframework.aop.framework.ProxyCreatorSupport.createAopProxy
+protected final synchronized AopProxy createAopProxy() {
+    if (!this.active) {
+        activate();
+    }
+    return getAopProxyFactory().createAopProxy(this); ⬇️ -- JDK动态代理
+}
+org.springframework.aop.framework.DefaultAopProxyFactory.createAopProxy
+@Override
+public AopProxy createAopProxy(AdvisedSupport config) throws AopConfigException {
+    if (config.isOptimize() || config.isProxyTargetClass() || hasNoUserSuppliedProxyInterfaces(config)) {
+        Class<?> targetClass = config.getTargetClass();
+        if (targetClass == null) {
+            throw new AopConfigException("TargetSource cannot determine target class: " +
+                    "Either an interface or a target is required for proxy creation.");
+        }
+        if (targetClass.isInterface() || Proxy.isProxyClass(targetClass)) {
+            return new JdkDynamicAopProxy(config);
+        }
+        return new ObjenesisCglibAopProxy(config);
+    }
+    else {
+        return new JdkDynamicAopProxy(config);
+    }
+}
+```
+如果指定了(proxy-target-class设为true)使用Cglib，那么就会使用Cglib的方式，如果没有指定(或为false)，那么先回检测被代理类是否实现了自己的接口，如果实现了，那么就采用JDK动态代理的方式。<br/>
+`JDK动态代理`<br/>
+JdkDynamicAopProxy.getProxy:<br/>
+```
+org.springframework.aop.framework.JdkDynamicAopProxy.getProxy(java.lang.ClassLoader)
+@Override
+public Object getProxy(@Nullable ClassLoader classLoader) {
+    if (logger.isTraceEnabled()) {
+        logger.trace("Creating JDK dynamic proxy: " + this.advised.getTargetSource());
+    }
+    Class<?>[] proxiedInterfaces = AopProxyUtils.completeProxiedInterfaces(this.advised, true);
+    findDefinedEqualsAndHashCodeMethods(proxiedInterfaces);
+    return Proxy.newProxyInstance(classLoader, proxiedInterfaces, this);
+}
+```
+关键的InvocationHandler参数其实就是JdkDynamicAopProxy自身。
 
 
 
 
 
+```
+org.springframework.aop.framework.CglibAopProxy.getProxy(java.lang.ClassLoader)
+@Override
+public Object getProxy(@Nullable ClassLoader classLoader) {
+    if (logger.isTraceEnabled()) {
+        logger.trace("Creating CGLIB proxy: " + this.advised.getTargetSource());
+    }
 
+    try {
+        Class<?> rootClass = this.advised.getTargetClass();
+        Assert.state(rootClass != null, "Target class must be available for creating a CGLIB proxy");
+
+        Class<?> proxySuperClass = rootClass;
+        if (ClassUtils.isCglibProxyClass(rootClass)) {
+            proxySuperClass = rootClass.getSuperclass();
+            Class<?>[] additionalInterfaces = rootClass.getInterfaces();
+            for (Class<?> additionalInterface : additionalInterfaces) {
+                this.advised.addInterface(additionalInterface);
+            }
+        }
+
+        // Validate the class, writing log messages as necessary.
+        validateClassIfNecessary(proxySuperClass, classLoader);
+
+        // Configure CGLIB Enhancer...
+        Enhancer enhancer = createEnhancer();
+        if (classLoader != null) {
+            enhancer.setClassLoader(classLoader);
+            if (classLoader instanceof SmartClassLoader &&
+                    ((SmartClassLoader) classLoader).isClassReloadable(proxySuperClass)) {
+                enhancer.setUseCache(false);
+            }
+        }
+        enhancer.setSuperclass(proxySuperClass);
+        enhancer.setInterfaces(AopProxyUtils.completeProxiedInterfaces(this.advised));
+        enhancer.setNamingPolicy(SpringNamingPolicy.INSTANCE);
+        enhancer.setStrategy(new ClassLoaderAwareUndeclaredThrowableStrategy(classLoader));
+
+        Callback[] callbacks = getCallbacks(rootClass);
+        Class<?>[] types = new Class<?>[callbacks.length];
+        for (int x = 0; x < types.length; x++) {
+            types[x] = callbacks[x].getClass();
+        }
+        // fixedInterceptorMap only populated at this point, after getCallbacks call above
+        enhancer.setCallbackFilter(new ProxyCallbackFilter(
+                this.advised.getConfigurationOnlyCopy(), this.fixedInterceptorMap, this.fixedInterceptorOffset));
+        enhancer.setCallbackTypes(types);
+
+        // Generate the proxy class and create a proxy instance.
+        return createProxyClassAndInstance(enhancer, callbacks);
+    }
+    catch (CodeGenerationException | IllegalArgumentException ex) {
+        throw new AopConfigException("Could not generate CGLIB subclass of " + this.advised.getTargetClass() +
+                ": Common causes of this problem include using a final class or a non-visible class",
+                ex);
+    }
+    catch (Throwable ex) {
+        // TargetSource.getTarget() failed
+        throw new AopConfigException("Unexpected AOP exception", ex);
+    }
+}
+```
 
 
 
