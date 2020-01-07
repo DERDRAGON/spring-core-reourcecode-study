@@ -17,7 +17,7 @@ protected void prepareRefresh() {
     }
 
     // Initialize any placeholder property sources in the context environment.
-    initPropertySources(); 在上下文环境中初始化任何占位符属性来源
+    initPropertySources(); 在上下文环境中初始化任何占位符属性来源 -- 什么都没做
 
     // Validate that all properties marked as required are resolvable:
     // see ConfigurablePropertyResolver#setRequiredProperties
