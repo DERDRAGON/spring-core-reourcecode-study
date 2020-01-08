@@ -100,6 +100,14 @@ private PropertyPlaceholderHelper createPlaceholderHelper(boolean ignoreUnresolv
     return new PropertyPlaceholderHelper(this.placeholderPrefix, this.placeholderSuffix,
             this.valueSeparator, ignoreUnresolvablePlaceholders);
 }
+
+------
+其实代码执行到这里的时候还没有进行xml配置文件的解析，那么这里的解析placeHolder是什么意思呢，原因在于可以这么写:
+System.setProperty("spring", "classpath");
+ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("${spring}:config.xml");
+SimpleBean bean = context.getBean(SimpleBean.class);
+------
+
 org.springframework.core.env.AbstractPropertyResolver.doResolvePlaceholders
 private String doResolvePlaceholders(String text, PropertyPlaceholderHelper helper) {
     return helper.replacePlaceholders(text, this::getPropertyAsRawString);
