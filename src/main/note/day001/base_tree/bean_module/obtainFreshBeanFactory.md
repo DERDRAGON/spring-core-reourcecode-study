@@ -117,7 +117,7 @@ public int loadBeanDefinitions(String location, @Nullable Set<Resource> actualRe
         // Resource pattern matching available.
         try {
             //获取资源的方法在org.springframework.core.io.support.PathMatchingResourcePatternResolver.getResources
-            //加载 
+            //加载
             Resource[] resources = ((ResourcePatternResolver) resourceLoader).getResources(location);
             //解析
             //最终逐个调用XmlBeanDefinitionReader的loadBeanDefinitions方法
@@ -444,7 +444,7 @@ private void parseDefaultElement(Element ele, BeanDefinitionParserDelegate deleg
         // recurse
         // 解析beans元素
         // beans元素的嵌套直接递归调用DefaultBeanDefinitionDocumentReader.parseBeanDefinitions。
-        doRegisterBeanDefinitions(ele); 
+        doRegisterBeanDefinitions(ele);
     }
 }
 ```
@@ -683,7 +683,7 @@ public static void registerBeanDefinition(
     // Register bean definition under primary name.
     String beanName = definitionHolder.getBeanName();
     // registry其实就是DefaultListableBeanFactory对象
-    registry.registerBeanDefinition(beanName, definitionHolder.getBeanDefinition());  ⬇️ 
+    registry.registerBeanDefinition(beanName, definitionHolder.getBeanDefinition());  ⬇️
     // Register aliases for bean name, if any.
     String[] aliases = definitionHolder.getAliases();  ⬇️
     if (aliases != null) {
@@ -799,7 +799,8 @@ public void registerAlias(String name, String alias) {
 }
 ```
 ![BeanDefiniton数据结构](../../image/BeanDefinition.jpg)<br/>
-[bean注册过程](obtainFreshBeanFactory-expand.md)
+
+[bean依赖解析过程](obtainFreshBeanFactory-expand.md)
 
 ######## Beans注册
 ```
@@ -861,6 +862,3 @@ public NamespaceHandler resolve(String namespaceUri) {
     }
 }
 ```
-
-
-
