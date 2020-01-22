@@ -1,3 +1,5 @@
+- [prepareRefresh方法](#preparerefresh%e6%96%b9%e6%b3%95)
+
 # prepareRefresh方法
 
 ```

@@ -1,3 +1,5 @@
+- [bean初始化-initializeBean](#bean%e5%88%9d%e5%a7%8b%e5%8c%96-initializebean)
+
 # bean初始化-initializeBean
 
 org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.initializeBean(java.lang.String, java.lang.Object, org.springframework.beans.factory.support.RootBeanDefinition)

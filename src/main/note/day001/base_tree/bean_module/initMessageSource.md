@@ -1,3 +1,12 @@
+- [AbstractApplicationContext的initMessageSource](#abstractapplicationcontext%e7%9a%84initmessagesource)
+  - [Locale](#locale)
+  - [本地化工具类](#%e6%9c%ac%e5%9c%b0%e5%8c%96%e5%b7%a5%e5%85%b7%e7%b1%bb)
+  - [MessageSource](#messagesource)
+    - [MessageSource的类结构](#messagesource%e7%9a%84%e7%b1%bb%e7%bb%93%e6%9e%84)
+    - [ResourceBundleMessageSource](#resourcebundlemessagesource)
+    - [ReloadableResourceBundleMessageSource](#reloadableresourcebundlemessagesource)
+  - [容器级的国际化信息资源](#%e5%ae%b9%e5%99%a8%e7%ba%a7%e7%9a%84%e5%9b%bd%e9%99%85%e5%8c%96%e4%bf%a1%e6%81%af%e8%b5%84%e6%ba%90)
+
 # AbstractApplicationContext的initMessageSource
 
 国际化信息

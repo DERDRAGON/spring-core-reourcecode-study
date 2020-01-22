@@ -1,3 +1,12 @@
+- [属性编辑器PropertyEditor](#%e5%b1%9e%e6%80%a7%e7%bc%96%e8%be%91%e5%99%a8propertyeditor)
+  - [JavaBean的编辑器](#javabean%e7%9a%84%e7%bc%96%e8%be%91%e5%99%a8)
+  - [PropertyEditor](#propertyeditor)
+  - [BeanInfo](#beaninfo)
+  - [实例](#%e5%ae%9e%e4%be%8b)
+  - [Spring默认属性编辑器](#spring%e9%bb%98%e8%ae%a4%e5%b1%9e%e6%80%a7%e7%bc%96%e8%be%91%e5%99%a8)
+  - [自定义属性编辑器](#%e8%87%aa%e5%ae%9a%e4%b9%89%e5%b1%9e%e6%80%a7%e7%bc%96%e8%be%91%e5%99%a8)
+  - [注册自定义的属性编辑器](#%e6%b3%a8%e5%86%8c%e8%87%aa%e5%ae%9a%e4%b9%89%e7%9a%84%e5%b1%9e%e6%80%a7%e7%bc%96%e8%be%91%e5%99%a8)
+
 # 属性编辑器PropertyEditor
 
 在Spring配置文件里，我们往往通过字面值为Bean各种类型的属性提供设置值：不管是double类型还是int类型，在配置文件中都对应字符串类型的字面值。<br/>

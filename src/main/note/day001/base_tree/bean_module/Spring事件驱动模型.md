@@ -1,3 +1,12 @@
+- [Spring事件驱动模型](#spring%e4%ba%8b%e4%bb%b6%e9%a9%b1%e5%8a%a8%e6%a8%a1%e5%9e%8b)
+  - [简介](#%e7%ae%80%e4%bb%8b)
+  - [Java GUI事件驱动模型/观察者](#java-gui%e4%ba%8b%e4%bb%b6%e9%a9%b1%e5%8a%a8%e6%a8%a1%e5%9e%8b%e8%a7%82%e5%af%9f%e8%80%85)
+  - [Java提供的事件驱动模型/观察者抽象](#java%e6%8f%90%e4%be%9b%e7%9a%84%e4%ba%8b%e4%bb%b6%e9%a9%b1%e5%8a%a8%e6%a8%a1%e5%9e%8b%e8%a7%82%e5%af%9f%e8%80%85%e6%8a%bd%e8%b1%a1)
+  - [Spring提供的事件驱动模型/观察者抽象](#spring%e6%8f%90%e4%be%9b%e7%9a%84%e4%ba%8b%e4%bb%b6%e9%a9%b1%e5%8a%a8%e6%a8%a1%e5%9e%8b%e8%a7%82%e5%af%9f%e8%80%85%e6%8a%bd%e8%b1%a1)
+  - [Spring事件机制的简单例子](#spring%e4%ba%8b%e4%bb%b6%e6%9c%ba%e5%88%b6%e7%9a%84%e7%ae%80%e5%8d%95%e4%be%8b%e5%ad%90)
+  - [测试](#%e6%b5%8b%e8%af%95)
+  - [Spring事件机制实现之前提到的注册流程](#spring%e4%ba%8b%e4%bb%b6%e6%9c%ba%e5%88%b6%e5%ae%9e%e7%8e%b0%e4%b9%8b%e5%89%8d%e6%8f%90%e5%88%b0%e7%9a%84%e6%b3%a8%e5%86%8c%e6%b5%81%e7%a8%8b)
+
 # Spring事件驱动模型
 
 ## 简介

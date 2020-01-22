@@ -1,3 +1,16 @@
+- [obtainFreshBeanFactory](#obtainfreshbeanfactory)
+  - [刷新BeanFactory](#%e5%88%b7%e6%96%b0beanfactory)
+    - [创建默认的BeanFactory](#%e5%88%9b%e5%bb%ba%e9%bb%98%e8%ae%a4%e7%9a%84beanfactory)
+    - [定制化beanFactory：<br/>](#%e5%ae%9a%e5%88%b6%e5%8c%96beanfactorybr)
+    - [Bean加载：<br/>](#bean%e5%8a%a0%e8%bd%bdbr)
+    - [创建一个新的XmlBeanDefinitionReader给定BeanFactory。<br/>](#%e5%88%9b%e5%bb%ba%e4%b8%80%e4%b8%aa%e6%96%b0%e7%9a%84xmlbeandefinitionreader%e7%bb%99%e5%ae%9abeanfactorybr)
+    - [解析路径资源](#%e8%a7%a3%e6%9e%90%e8%b7%af%e5%be%84%e8%b5%84%e6%ba%90)
+      - [获取资源文件 -- Resource是代表一种资源的接口](#%e8%8e%b7%e5%8f%96%e8%b5%84%e6%ba%90%e6%96%87%e4%bb%b6----resource%e6%98%af%e4%bb%a3%e8%a1%a8%e4%b8%80%e7%a7%8d%e8%b5%84%e6%ba%90%e7%9a%84%e6%8e%a5%e5%8f%a3)
+      - [解析资源文件内容](#%e8%a7%a3%e6%9e%90%e8%b5%84%e6%ba%90%e6%96%87%e4%bb%b6%e5%86%85%e5%ae%b9)
+        - [加载文件到内存](#%e5%8a%a0%e8%bd%bd%e6%96%87%e4%bb%b6%e5%88%b0%e5%86%85%e5%ad%98)
+        - [Bean解析](#bean%e8%a7%a3%e6%9e%90)
+          - [org.springframework.beans.factory.xml.DefaultBeanDefinitionDocumentReader.registerBeanDefinitions](#orgspringframeworkbeansfactoryxmldefaultbeandefinitiondocumentreaderregisterbeandefinitions)
+
 # obtainFreshBeanFactory
 
 ```

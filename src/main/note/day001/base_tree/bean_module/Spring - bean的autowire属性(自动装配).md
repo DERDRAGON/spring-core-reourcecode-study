@@ -1,3 +1,5 @@
+- [Spring - bean的autowire属性(自动装配)](#spring---bean%e7%9a%84autowire%e5%b1%9e%e6%80%a7%e8%87%aa%e5%8a%a8%e8%a3%85%e9%85%8d)
+
 # Spring - bean的autowire属性(自动装配)
 
 当我们要往一个bean的某个属性里注入另外一个bean，我们会使用<property> + <ref/>标签的形式。但是对于大型项目，假设有一个bean A被多个bean引用注入，

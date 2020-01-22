@@ -1,4 +1,12 @@
-######### meta子元素的解析
+- [meta子元素的解析](#meta%e5%ad%90%e5%85%83%e7%b4%a0%e7%9a%84%e8%a7%a3%e6%9e%90)
+- [replace-mothod解析](#replace-mothod%e8%a7%a3%e6%9e%90)
+- [构造参数(constructor-arg)解析](#%e6%9e%84%e9%80%a0%e5%8f%82%e6%95%b0constructor-arg%e8%a7%a3%e6%9e%90)
+- [property解析:](#property%e8%a7%a3%e6%9e%90)
+- [qualifier解析](#qualifier%e8%a7%a3%e6%9e%90)
+- [Bean装饰](#bean%e8%a3%85%e9%a5%b0)
+- [Bean注册](#bean%e6%b3%a8%e5%86%8c)
+
+# meta子元素的解析
 ```
 meta元素在xml配置文件里是这样的
 <bean id="b" name="one, two" class="base.SimpleBean">
