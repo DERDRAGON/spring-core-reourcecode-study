@@ -1,3 +1,12 @@
+- [Spring定时任务的几种实现](#spring%e5%ae%9a%e6%97%b6%e4%bb%bb%e5%8a%a1%e7%9a%84%e5%87%a0%e7%a7%8d%e5%ae%9e%e7%8e%b0)
+  - [一、分类](#%e4%b8%80%e5%88%86%e7%b1%bb)
+  - [二、用法说明](#%e4%ba%8c%e7%94%a8%e6%b3%95%e8%af%b4%e6%98%8e)
+    - [**Quartz**](#quartz)
+    - [第二种，作业类不继承特定基类。](#%e7%ac%ac%e4%ba%8c%e7%a7%8d%e4%bd%9c%e4%b8%9a%e7%b1%bb%e4%b8%8d%e7%bb%a7%e6%89%bf%e7%89%b9%e5%ae%9a%e5%9f%ba%e7%b1%bb)
+    - [Spring-Task](#spring-task)
+      - [第一种：配置文件方式](#%e7%ac%ac%e4%b8%80%e7%a7%8d%e9%85%8d%e7%bd%ae%e6%96%87%e4%bb%b6%e6%96%b9%e5%bc%8f)
+      - [第二种：使用注解形式](#%e7%ac%ac%e4%ba%8c%e7%a7%8d%e4%bd%bf%e7%94%a8%e6%b3%a8%e8%a7%a3%e5%bd%a2%e5%bc%8f)
+
 # Spring定时任务的几种实现
 
 ## 一、分类
