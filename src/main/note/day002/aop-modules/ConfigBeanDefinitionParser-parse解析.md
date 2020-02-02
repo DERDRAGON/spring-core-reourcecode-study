@@ -121,12 +121,43 @@ pointcut的解析是一个生成一个BeanDefinition并将其id, expression等�
  - BeanDefinition的ID来自于id属性，如果没有，那么自动生成。<br/>
  - BeanDefinition的class是AspectJExpressionPointcut。<br/>
  - BeanDefinition的scope为prototype。<br/>
+ 
  AspectJExpressionPointcut类图:<br/>
  ![AspectJExpressionPointcut类图](../image/AspectJExpressionPointcut.png)
  
  ## aop:advisor
- ```
- private AbstractBeanDefinition createAdvisorBeanDefinition(Element advisorElement, ParserContext parserContext) {
+```
+//org.springframework.aop.config.ConfigBeanDefinitionParser#parseAdvisor
+private void parseAdvisor(Element advisorElement, ParserContext parserContext) {
+    AbstractBeanDefinition advisorDef = createAdvisorBeanDefinition(advisorElement, parserContext);
+    String id = advisorElement.getAttribute(ID);
+    try {
+        this.parseState.push(new AdvisorEntry(id));
+        String advisorBeanName = id;
+        if (StringUtils.hasText(advisorBeanName)) {
+            parserContext.getRegistry().registerBeanDefinition(advisorBeanName, advisorDef);
+        }
+        else {
+            advisorBeanName = parserContext.getReaderContext().registerWithGeneratedName(advisorDef);
+        }
+        Object pointcut = parsePointcutProperty(advisorElement, parserContext);
+        if (pointcut instanceof BeanDefinition) {
+            advisorDef.getPropertyValues().add(POINTCUT, pointcut);
+            parserContext.registerComponent(
+                    new AdvisorComponentDefinition(advisorBeanName, advisorDef, (BeanDefinition) pointcut));
+        }
+        else if (pointcut instanceof String) {
+            advisorDef.getPropertyValues().add(POINTCUT, new RuntimeBeanReference((String) pointcut));
+            parserContext.registerComponent(
+                    new AdvisorComponentDefinition(advisorBeanName, advisorDef));
+        }
+    }
+    finally {
+        this.parseState.pop();
+    }
+}
+//org.springframework.aop.config.ConfigBeanDefinitionParser#createAdvisorBeanDefinition
+private AbstractBeanDefinition createAdvisorBeanDefinition(Element advisorElement, ParserContext parserContext) {
     RootBeanDefinition advisorDefinition = new RootBeanDefinition(DefaultBeanFactoryPointcutAdvisor.class);
     advisorDefinition.setSource(parserContext.extractSource(advisorElement));
     String adviceRef = advisorElement.getAttribute(ADVICE_REF);
@@ -144,7 +175,7 @@ pointcut的解析是一个生成一个BeanDefinition并将其id, expression等�
     }
     return advisorDefinition;
 }
- ```
+```
 首先是其所有属性的示例:
 ```
 <aop:advisor id="" order="" advice-ref="aopAdvice" pointcut="" pointcut-ref="" />
@@ -172,6 +203,7 @@ advice-ref是必须的属性，并且这里的advice必须实现org.aopalliance.
 ```
 处的beanClass是DefaultBeanFactoryPointcutAdvisor，其类图:<br/>
 ![DefaultBeanFactoryPointcutAdvisor](../image/DefaultBeanFactoryPointcutAdvisor.png)<br/>
+
 另外注意对于pointcut和pointcut-ref两者处理的区别，对于pointcut属性，Spring会同样创建一个AspectJExpressionPointcut类型的BeanDefinition，
 对于pointcut-ref会生成一个RuntimeBeanReference对象指向原pointcut的引用。此类的类图:<br/>
 ![org.springframework.beans.factory.config.RuntimeBeanNameReference.RuntimeBeanNameReference](../image/RuntimeBeanNameReference.png)<br/>

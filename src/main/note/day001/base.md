@@ -5,7 +5,7 @@
 
 ### ClassPathXmlApplicationContext
 
-demo：com.der.day001.BaseStudy
+demo：com.der.base.BaseStudy
 
 ```$xslt
 ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("classpath:spring-start.xml");

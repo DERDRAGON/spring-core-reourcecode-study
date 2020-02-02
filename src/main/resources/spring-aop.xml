@@ -1,22 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <beans xmlns="http://www.springframework.org/schema/beans"
-       xmlns:task="http://www.springframework.org/schema/task"
-       xmlns:task="http://www.springframework.org/schema/aop"
-       xmlns:task="http://www.springframework.org/schema/context"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-       xmlns:context="http://www.springframework.org/schema/context"
        xmlns:aop="http://www.springframework.org/schema/aop"
-       xsi:schemaLocation="http://www.springframework.org/schema/beans
-                                      http://www.springframework.org/schema/beans/spring-beans.xsd
-                                      http://www.springframework.org/schema/context
-                                      http://www.springframework.org/schema/context/spring-context.xsd http://www.springframework.org/schema/aop https://www.springframework.org/schema/aop/spring-aop.xsd">
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:jee="http://www.springframework.org/schema/jee"
+       xmlns:tx="http://www.springframework.org/schema/tx"
+       xmlns:task="http://www.springframework.org/schema/task"
+       xsi:schemaLocation="
+        http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-4.0.xsd
+        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+        http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.3.xsd
+        http://www.springframework.org/schema/jee http://www.springframework.org/schema/jee/spring-jee-4.0.xsd
+        http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-4.0.xsd
+        http://www.springframework.org/schema/task http://www.springframework.org/schema/task/spring-task-4.0.xsd">
 
     <context:component-scan base-package="com.der" />
 
-    <aop:config>
-        <aop:pointcut id="transaction" expression="execution(* com.der.day002.service.*.*(..))" />
-        <aop:advisor advice-ref="txAdvice" pointcut="transaction" />
-        <aop:aspect ref="" />
+    <tx:advice id="txAdvice" transaction-manager="transactionManager">
+        <tx:attributes>
+            <tx:method name="get*" read-only="true" propagation="NOT_SUPPORTED"/>
+            <tx:method name="find*" read-only="true" propagation="NOT_SUPPORTED"/>
+            <tx:method name="*" propagation="REQUIRED"/>
+        </tx:attributes>
+    </tx:advice>
+
+    <bean id="aopAdvice" class="com.der.aop.advise.AopDemoAdvice" />
+    <!-- 必须配置，因为被代理的对象必须在Spring容器中 -->
+    <bean id="aopDemo" class="com.der.aop.advise.AopDemo" />
+
+    <aop:config expose-proxy="true">
+        <aop:pointcut expression="execution(* com.der.aop.service.*.*(..))" id="transaction"/>
+        <aop:advisor advice-ref="txAdvice" pointcut-ref="transaction"/>
+        <aop:aspect ref="aopAdvice">
+            <aop:pointcut id="pointcut" expression="execution(* com.der.aop.advise.AopDemo.send())" />
+            <aop:before method="beforeSend" pointcut-ref="pointcut" />
+            <aop:after method="afterSend" pointcut-ref="pointcut" />
+        </aop:aspect>
     </aop:config>
 
 
